@@ -1,0 +1,24 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment variables (secrets)
+.env
+
+# Data and models (large files)
+data/
+models/
+
+# Logs
+*.log
+
+# Generated documentation
+.docai/
+.DS_Store

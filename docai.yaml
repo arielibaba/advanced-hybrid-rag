@@ -1,0 +1,66 @@
+project:
+  name: advanced-hybrid-rag
+  output_dir: ./docs/generated
+  cache_dir: ./.docai/cache
+  exclude_patterns:
+  - __pycache__
+  - .venv
+  - venv
+  - env
+  - node_modules
+  - .git
+  - '*.pyc'
+  - test_*
+  - '*_test.py'
+  - tests/
+  - .docai
+  - '*.egg-info'
+  - doc/
+  - docs/
+  analyze_private: false
+  max_complexity_for_simple_analysis: 5
+  include_security_analysis: true
+  enable_incremental: true
+  force_full_analysis: false
+  source_dir: /Users/arielibaba/Documents/projets perso/advanced-hybrid-rag/src/
+llm:
+  provider: gemini
+  model: gemini-2.0-flash
+  temperature: 0.1
+  max_tokens: 4096
+  base_url: null
+  context_size: 0
+  num_gpu: -1
+  timeout: 600
+graph:
+  database_path: ./.docai/graph_db
+  include_embeddings: true
+  community_algorithm: louvain
+  community_resolution: 1.0
+embedding:
+  provider: ollama
+  model: qwen3-embedding:0.6b
+  ollama_base_url: http://localhost:11434
+  huggingface_model: all-MiniLM-L6-v2
+  embedding_dim: 0
+  batch_size: 32
+analysis:
+  architecture_model: gemini-2.0-flash
+  architecture_provider: gemini
+  community_model: gemini-2.0-flash
+  community_provider: gemini
+  entity_model: gemini-2.0-flash
+  entity_provider: gemini
+  temperature: 0.1
+  max_tokens: 8192
+  max_workers: 0
+  use_async: true
+  checkpoint_path: ./.docai/analysis_checkpoint.json
+  checkpoint_interval: 5
+query:
+  classifier_model: gemini-2.0-flash
+  classifier_provider: gemini
+  synthesis_model: gemini-2.0-flash
+  synthesis_provider: gemini
+  temperature: 0.3
+  max_tokens: 4096

@@ -1,0 +1,625 @@
+{
+  "project_name": "advanced-hybrid-rag",
+  "generated_at": "2025-12-31T16:54:19.244991",
+  "architecture": {
+    "architectural_pattern": {
+      "primary": "Custom",
+      "confidence": 0.6,
+      "justification": "Based on the module structure and function names, the project appears to implement a custom architecture tailored for hybrid RAG (Retrieval-Augmented Generation). The modules suggest a pipeline-like structure involving data ingestion, processing, and indexing, without adhering to a standard architectural pattern like MVC or layered architecture in a strict sense."
+    },
+    "layers": [
+      {
+        "name": "Data Ingestion",
+        "responsibility": "Loading and converting data from various sources (PDFs, images, text files).",
+        "modules": [
+          "convert_pdf_to_image.py",
+          "parse_image_with_table.py",
+          "parse_image_with_text.py",
+          "extract_objects_from_image.py"
+        ],
+        "cohesion": "high"
+      },
+      {
+        "name": "Data Processing & Chunking",
+        "responsibility": "Splitting data into smaller chunks suitable for embedding and retrieval.",
+        "modules": [
+          "chunk_text_data.py",
+          "chunk_table_data.py"
+        ],
+        "cohesion": "high"
+      },
+      {
+        "name": "Embedding & Indexing",
+        "responsibility": "Creating embeddings for the data chunks and building indexes for efficient retrieval.",
+        "modules": [
+          "create_embeddings.py",
+          "build_indexes.py",
+          "create_image_description.py"
+        ],
+        "cohesion": "high"
+      },
+      {
+        "name": "Utilities",
+        "responsibility": "Providing helper functions for logging, text manipulation, file handling, and OpenAI API interactions.",
+        "modules": [
+          "utils/logc.py",
+          "utils/text_utils.py",
+          "utils/openai_utils.py",
+          "utils/file_utils.py",
+          "utils/bcolors.py",
+          "helpers.py",
+          "constants.py"
+        ],
+        "cohesion": "medium"
+      },
+      {
+        "name": "Orchestration",
+        "responsibility": "Managing the overall data ingestion and indexing pipeline.",
+        "modules": [
+          "run_ingestion_pipeline.py"
+        ],
+        "cohesion": "high"
+      }
+    ],
+    "entry_points": [
+      {
+        "name": "run_ingestion_pipeline.py",
+        "type": "cli",
+        "description": "Likely the main script to initiate the data ingestion and indexing pipeline."
+      }
+    ],
+    "data_flow": "The data flow starts with loading and converting data from various sources (PDFs, images, text). This data is then processed and chunked into smaller units. Embeddings are created for these chunks, and indexes are built to enable efficient retrieval. The `run_ingestion_pipeline.py` module likely orchestrates this entire process.",
+    "strengths": [
+      "Modularity: The code is divided into well-defined modules, each responsible for a specific task.",
+      "Clear separation of concerns: Different layers handle distinct aspects of the RAG pipeline (ingestion, processing, embedding, indexing).",
+      "Utility modules: Reusable utility functions promote code maintainability and reduce redundancy."
+    ],
+    "concerns": [
+      {
+        "issue": "Lack of explicit architectural documentation.",
+        "severity": "medium",
+        "recommendation": "Document the overall architecture and data flow to improve understanding and maintainability."
+      },
+      {
+        "issue": "Limited information on error handling and monitoring.",
+        "severity": "low",
+        "recommendation": "Implement robust error handling and monitoring mechanisms to ensure the pipeline's reliability."
+      },
+      {
+        "issue": "Tight coupling between modules if not designed carefully.",
+        "severity": "medium",
+        "recommendation": "Ensure loose coupling between modules by using interfaces or abstract classes where appropriate."
+      }
+    ]
+  },
+  "communities": [
+    {
+      "domain_name": "Text Chunking and Token Management",
+      "responsibility": "This module focuses on splitting text into manageable chunks, primarily for use in language models or systems with token limits. It provides functionalities for semantic chunking, hard splitting based on token count, and managing chat history within token constraints.",
+      "key_entities": [
+        {
+          "name": "chunk_text_data",
+          "role": "Module"
+        },
+        {
+          "name": "hard_split",
+          "role": "Function: Simple text splitter"
+        },
+        {
+          "name": "process_semantic_split",
+          "role": "Function: Semantic text splitter"
+        },
+        {
+          "name": "semantic_chunk_text_file",
+          "role": "Function: Processes text files into semantic chunks"
+        },
+        {
+          "name": "get_token_count",
+          "role": "Function: Counts tokens in text"
+        },
+        {
+          "name": "limit_chat_history",
+          "role": "Function: Truncates chat history based on token limit"
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [
+        "helpers.get_token_count",
+        "helpers.clean_up_text"
+      ],
+      "public_api": [
+        "hard_split",
+        "process_semantic_split",
+        "semantic_chunk_text_file",
+        "chunk_text_data",
+        "get_token_count",
+        "limit_chat_history"
+      ],
+      "concerns": [
+        "The module relies on an external 'helpers' module, which could introduce dependency issues if 'helpers' is not well-defined or changes unexpectedly.",
+        "The 'hard_split' function is described as a 'fallback', suggesting it might not be ideal for all situations and could lead to suboptimal chunking.",
+        "Error handling and edge cases (e.g., extremely long tokens, empty files) are not explicitly mentioned and should be considered."
+      ]
+    },
+    {
+      "domain_name": "Embedding Generation",
+      "responsibility": "This component focuses on generating and managing text embeddings. It reads text chunks, creates embeddings using a specified model, and stores the embeddings along with metadata for later retrieval and use in semantic search or other NLP tasks.",
+      "key_entities": [
+        {
+          "name": "create_embeddings",
+          "role": "Module responsible for generating embeddings for text chunks."
+        },
+        {
+          "name": "get_embeddings",
+          "role": "Function to generate an embedding for a given text."
+        },
+        {
+          "name": "make_metadata",
+          "role": "Function to build metadata dictionary based on chunk filename."
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [],
+      "public_api": [
+        "create_embeddings.get_embeddings",
+        "create_embeddings.make_metadata",
+        "create_embeddings.create_embeddings"
+      ],
+      "concerns": []
+    },
+    {
+      "domain_name": "Markdown Table Chunking and LLM Interaction",
+      "responsibility": "This cluster of code entities focuses on processing markdown tables, splitting them into manageable chunks, and interacting with a Large Language Model (LLM) to generate summaries or responses based on the table content. It handles potential malformed JSON responses from the LLM and extracts valid JSON.",
+      "key_entities": [
+        {
+          "name": "chunk_table_data",
+          "role": "Module containing table chunking functions."
+        },
+        {
+          "name": "chunk_markdown_table_with_overlap",
+          "role": "Function to split markdown tables into overlapping chunks."
+        },
+        {
+          "name": "chunk_markdown_table",
+          "role": "Function to split markdown tables into chunks and generate summaries using an LLM."
+        },
+        {
+          "name": "chunk_table_data",
+          "role": "Function to open markdown tables and split them into chunks."
+        },
+        {
+          "name": "ask_LLM_with_JSON",
+          "role": "Function to query an LLM and parse the JSON response."
+        },
+        {
+          "name": "recover_json",
+          "role": "Function to recover valid JSON from potentially malformed strings."
+        },
+        {
+          "name": "extract_json",
+          "role": "Function to extract JSON from a larger string."
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [
+        "helpers.get_token_count",
+        "helpers.ask_LLM_with_JSON",
+        "helpers.recover_json",
+        "helpers.extract_json"
+      ],
+      "public_api": [
+        "chunk_markdown_table_with_overlap",
+        "chunk_markdown_table",
+        "chunk_table_data",
+        "ask_LLM_with_JSON",
+        "recover_json",
+        "extract_json"
+      ],
+      "concerns": [
+        "Error handling for LLM API calls.",
+        "Robustness of JSON recovery and extraction.",
+        "Potential performance bottlenecks in large table processing.",
+        "Token counting accuracy for chunking."
+      ]
+    },
+    {
+      "domain_name": "Document Object Detection and Processing",
+      "responsibility": "This code cluster focuses on detecting and grouping objects (tables, pictures, and other detections) within an image. It involves running inference, grouping detections based on spatial relationships (specifically vertical overlap), and saving the grouped and remaining detections.",
+      "key_entities": [
+        {
+          "name": "extract_objects_from_image",
+          "role": "Module containing functions for object extraction."
+        },
+        {
+          "name": "vertical_overlap",
+          "role": "Function to determine vertical overlap between objects."
+        },
+        {
+          "name": "DetectionProcessor",
+          "role": "Class responsible for processing and grouping detections."
+        },
+        {
+          "name": "process_image",
+          "role": "Method to run inference and group detections."
+        },
+        {
+          "name": "save_detections",
+          "role": "Method to save grouped and remaining detections."
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [],
+      "public_api": [
+        "DetectionProcessor",
+        "process_image",
+        "save_detections",
+        "extract_objects_from_image",
+        "vertical_overlap"
+      ],
+      "concerns": []
+    },
+    {
+      "domain_name": "Image Description Generation",
+      "responsibility": "Asynchronously generates descriptions for relevant images within a directory. It filters images based on relevance criteria (non-white pixel count and color variance), creates descriptions using an external language model, and extracts Markdown tables from the generated descriptions.",
+      "key_entities": [
+        {
+          "name": "create_image_descriptions_async",
+          "role": "Orchestrates the asynchronous image description generation process."
+        },
+        {
+          "name": "_describe_single_image",
+          "role": "Generates a description for a single image using a language model."
+        },
+        {
+          "name": "is_relevant_image",
+          "role": "Determines if an image is relevant based on pixel analysis."
+        },
+        {
+          "name": "extract_markdown_tables",
+          "role": "Extracts Markdown tables from text."
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [
+        "ollama_client (implicitly through _describe_single_image)",
+        "helpers.is_relevant_image",
+        "helpers.extract_markdown_tables"
+      ],
+      "public_api": [
+        "create_image_descriptions_async"
+      ],
+      "concerns": [
+        "The blocking `ollama_client.chat(...)` call is offloaded to a thread, but error handling and thread management could be improved.",
+        "The relevance criteria for images might need to be configurable or adaptable.",
+        "The dependency on external language model (ollama_client) makes the module susceptible to external service availability."
+      ]
+    },
+    {
+      "domain_name": "Question Answering and Document Processing",
+      "responsibility": "This cluster of code entities focuses on processing and querying documents. It includes functionalities for cleaning text, creating and managing indexes, rewriting and expanding queries, and interacting with Language Model Models (LLMs) for generating responses. The code supports both streaming and non-streaming modes of LLM interaction.",
+      "key_entities": [
+        {
+          "name": "helpers",
+          "role": "Module containing utility functions for text manipulation."
+        },
+        {
+          "name": "markdown_to_plain_text",
+          "role": "Function to convert Markdown to plain text."
+        },
+        {
+          "name": "remove_markdown_tables",
+          "role": "Function to remove Markdown tables from text."
+        },
+        {
+          "name": "remove_code_blocks",
+          "role": "Function to remove code blocks from text."
+        },
+        {
+          "name": "remove_mermaid_blocks",
+          "role": "Function to remove Mermaid diagrams from text."
+        },
+        {
+          "name": "remove_extracted_text_blocks",
+          "role": "Function to remove extracted text blocks from text."
+        },
+        {
+          "name": "clean_up_text",
+          "role": "Function to clean up text by removing code blocks, Mermaid diagrams, and Markdown tables."
+        },
+        {
+          "name": "load_embeddings_with_associated_documents",
+          "role": "Function to load embeddings and associated documents."
+        },
+        {
+          "name": "create_documents",
+          "role": "Function to create documents."
+        },
+        {
+          "name": "create_index",
+          "role": "Function to create an index from documents."
+        },
+        {
+          "name": "save_index",
+          "role": "Function to save an index to a directory."
+        },
+        {
+          "name": "query_index",
+          "role": "Function to query an index with a query string."
+        },
+        {
+          "name": "retrieve_from_keyword_index",
+          "role": "Function to retrieve documents from an index based on metadata."
+        },
+        {
+          "name": "stream_llm_output",
+          "role": "Function to stream the output of an LLM chat response."
+        },
+        {
+          "name": "run_streaming",
+          "role": "Function to run the LLM in streaming mode."
+        },
+        {
+          "name": "rewrite_query",
+          "role": "Function to rewrite a user query based on conversation history."
+        },
+        {
+          "name": "parse_rewritten_query",
+          "role": "Function to parse bullet-pointed questions from a rewritten query."
+        },
+        {
+          "name": "expand_query",
+          "role": "Function to expand a user query using synonyms or related terms."
+        },
+        {
+          "name": "parse_expanded_queries",
+          "role": "Function to parse expanded queries from LLM response text."
+        },
+        {
+          "name": "convert_history_to_tuples",
+          "role": "Function to convert chat history to a list of tuples."
+        },
+        {
+          "name": "reset_conversation",
+          "role": "Function to reset the conversation history."
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [
+        "LLM (e.g., Ollama)",
+        "Gradio",
+        "BaseIndex",
+        "VectorStoreIndex"
+      ],
+      "public_api": [
+        "markdown_to_plain_text",
+        "clean_up_text",
+        "load_embeddings_with_associated_documents",
+        "create_documents",
+        "create_index",
+        "save_index",
+        "query_index",
+        "retrieve_from_keyword_index",
+        "run_streaming",
+        "rewrite_query",
+        "expand_query",
+        "convert_history_to_tuples",
+        "reset_conversation"
+      ],
+      "concerns": [
+        "The code relies heavily on LLMs, which can be resource-intensive and may introduce latency.",
+        "Error handling and input validation are not explicitly mentioned and should be considered.",
+        "The specific implementations of BaseIndex and VectorStoreIndex are not provided, making it difficult to assess their performance and scalability.",
+        "The effectiveness of query rewriting and expansion depends on the quality of the LLM and the prompt engineering used."
+      ]
+    },
+    {
+      "domain_name": "Text Processing and Logging Utilities",
+      "responsibility": "This cluster provides a collection of utility functions for text manipulation, extraction, and logging. It includes functionalities for extracting specific content types (JSON, SQL, code, markdown, tables, etc.) from text, managing token counts, cleaning text, and logging events.",
+      "key_entities": [
+        {
+          "name": "logc",
+          "role": "Module for logging functionalities"
+        },
+        {
+          "name": "text_utils",
+          "role": "Module for text manipulation and extraction"
+        },
+        {
+          "name": "get_token_count",
+          "role": "Function to calculate token count in a text"
+        },
+        {
+          "name": "limit_token_count",
+          "role": "Function to limit text based on token count"
+        },
+        {
+          "name": "extract_json",
+          "role": "Function to extract JSON from text"
+        },
+        {
+          "name": "extract_sql",
+          "role": "Function to extract SQL from text"
+        },
+        {
+          "name": "extract_markdown_table_as_df",
+          "role": "Function to extract markdown table as a Pandas DataFrame"
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [],
+      "public_api": [
+        "get_current_time",
+        "logc",
+        "show_json",
+        "get_encoder",
+        "get_token_count",
+        "limit_token_count",
+        "extract_json",
+        "extract_sql",
+        "extract_code",
+        "extract_extracted_text",
+        "extract_markdown",
+        "extract_mermaid",
+        "extract_markdown_table",
+        "extract_table_rows",
+        "extract_markdown_table_as_df",
+        "remove_code",
+        "remove_markdown",
+        "remove_mermaid",
+        "remove_extracted_text",
+        "clean_up_text",
+        "recover_json",
+        "extract_chunk_number"
+      ],
+      "concerns": [
+        "The lack of descriptions for individual functions and modules makes understanding their specific purpose challenging.",
+        "The absence of error handling or validation in extraction functions could lead to unexpected behavior.",
+        "The reliance on global state or implicit dependencies within the functions could reduce reusability and testability."
+      ]
+    },
+    {
+      "domain_name": "OpenAI API Interaction",
+      "responsibility": "This module provides a set of utility functions for interacting with the OpenAI API. It encapsulates functionalities such as generating chat completions, creating embeddings, and handling image-based interactions with GPT-4 Vision, including format conversions and base64 encoding.",
+      "key_entities": [
+        {
+          "name": "get_chat_completion",
+          "role": "Function for generating chat completions from OpenAI's models."
+        },
+        {
+          "name": "get_chat_completion_with_json",
+          "role": "Function for generating chat completions with JSON output from OpenAI's models."
+        },
+        {
+          "name": "get_embeddings",
+          "role": "Function for creating embeddings using OpenAI's models."
+        },
+        {
+          "name": "ask_LLM",
+          "role": "Function to ask a Large Language Model (LLM) a question and get a response."
+        },
+        {
+          "name": "ask_LLM_with_JSON",
+          "role": "Function to ask an LLM a question and get a JSON response."
+        },
+        {
+          "name": "get_image_base64",
+          "role": "Function to encode an image to base64 format."
+        },
+        {
+          "name": "convert_png_to_jpg",
+          "role": "Function to convert a PNG image to JPG format."
+        },
+        {
+          "name": "call_gpt4v",
+          "role": "Function to interact with GPT-4 Vision, handling image processing and JSON recovery."
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [
+        "OpenAI API",
+        "utils.logc",
+        "utils.text_utils"
+      ],
+      "public_api": [
+        "get_chat_completion",
+        "get_chat_completion_with_json",
+        "get_embeddings",
+        "ask_LLM",
+        "ask_LLM_with_JSON",
+        "get_image_base64",
+        "convert_png_to_jpg",
+        "call_gpt4v"
+      ],
+      "concerns": [
+        "Error handling for OpenAI API calls.",
+        "Rate limiting and cost management for OpenAI API usage.",
+        "Security considerations for API key management.",
+        "Dependency on external libraries (utils.logc, utils.text_utils)."
+      ]
+    },
+    {
+      "domain_name": "File System Utilities",
+      "responsibility": "Provides a collection of utility functions for interacting with the file system. This includes functionalities for checking file existence, saving and loading data using pickle, manipulating file extensions, reading and writing file content, and finding files based on specific criteria.",
+      "key_entities": [
+        {
+          "name": "file_utils",
+          "role": "Module containing file system utilities"
+        },
+        {
+          "name": "is_file_or_url",
+          "role": "Function to check if a path is a file or URL"
+        },
+        {
+          "name": "save_to_pickle",
+          "role": "Function to save data to a pickle file"
+        },
+        {
+          "name": "load_from_pickle",
+          "role": "Function to load data from a pickle file"
+        },
+        {
+          "name": "check_replace_extension",
+          "role": "Function to check and replace file extension"
+        },
+        {
+          "name": "replace_extension",
+          "role": "Function to replace file extension"
+        },
+        {
+          "name": "write_to_file",
+          "role": "Function to write content to a file"
+        },
+        {
+          "name": "read_asset_file",
+          "role": "Function to read content from an asset file"
+        },
+        {
+          "name": "find_certain_files",
+          "role": "Function to find files based on criteria"
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [],
+      "public_api": [
+        "is_file_or_url",
+        "save_to_pickle",
+        "load_from_pickle",
+        "check_replace_extension",
+        "replace_extension",
+        "write_to_file",
+        "read_asset_file",
+        "find_certain_files"
+      ],
+      "concerns": []
+    },
+    {
+      "domain_name": "Terminal Output Formatting",
+      "responsibility": "Provides a set of color codes to format terminal output. This allows developers to add visual cues and improve the readability of console messages by using different colors and styles.",
+      "key_entities": [
+        {
+          "name": "bcolors",
+          "role": "Container for color codes"
+        }
+      ],
+      "cohesion": "high",
+      "external_dependencies": [],
+      "public_api": [
+        "bcolors class (containing color code attributes)"
+      ],
+      "concerns": [
+        "Limited functionality (only color codes)",
+        "No error handling for unsupported terminals"
+      ]
+    }
+  ],
+  "statistics": {
+    "total_entities": 111,
+    "modules": 19,
+    "classes": 2,
+    "functions": 87,
+    "methods": 3,
+    "total_analyses": 150,
+    "documented_entities": 42,
+    "documentation_coverage": 37.8
+  }
+}
