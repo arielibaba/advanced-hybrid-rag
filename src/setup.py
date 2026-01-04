@@ -343,7 +343,15 @@ class SetupWizard:
         try:
             import ollama
             client = ollama.Client()
-            available = {m["name"].split(":")[0]: m["name"] for m in client.list()["models"]}
+            response = client.list()
+            # Handle both old dict API and new object API
+            if hasattr(response, 'models'):
+                # New API: ListResponse with models attribute
+                available_models = [m.model for m in response.models]
+            else:
+                # Old API: dict with 'models' key
+                available_models = [m.get("name", m.get("model", "")) for m in response.get("models", [])]
+            available = {m.split(":")[0]: m for m in available_models}
         except Exception as e:
             console.print(f"[red]Impossible de se connecter à Ollama: {e}[/red]")
             console.print("[yellow]Lancez Ollama avec: ollama serve[/yellow]")
@@ -358,7 +366,7 @@ class SetupWizard:
 
         for model, desc in required_models:
             model_base = model.split(":")[0]
-            if model_base in available or model in [m["name"] for m in client.list()["models"]]:
+            if model_base in available or model in available_models:
                 table.add_row(model, desc, "[green]✓ Disponible[/green]")
             else:
                 table.add_row(model, desc, "[red]✗ Manquant[/red]")
