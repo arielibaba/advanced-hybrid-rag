@@ -7,6 +7,7 @@ A document processing and retrieval pipeline that combines **Vector RAG** and **
 ## Features
 
 - **Interactive Setup Wizard**: Guided configuration with API validation and model installation
+- **Multi-Format Document Conversion**: Automatic conversion of Office documents (pptx, docx, xlsx), HTML, Markdown, and images to PDF
 - **Hybrid RAG**: Combines vector similarity search with knowledge graph traversal
 - **GraphRAG**: Automatic entity/relationship extraction with community detection
 - **Multi-modal Document Processing**: Handles text, tables, and images from PDFs
@@ -16,6 +17,7 @@ A document processing and retrieval pipeline that combines **Vector RAG** and **
 - **Intelligent Query Orchestration**: LLM-based classification with smart skip logic and confidence fallback
 - **LLM Reranking**: Improves retrieval quality using LLM-based relevance scoring
 - **Multi-Provider Support**: Ollama (local), Gemini, OpenAI, Anthropic
+- **Clickable PDF References**: Response references link directly to source PDFs
 - **Cost Estimation**: Shows time and API cost estimates before processing
 - **No LangChain/LlamaIndex**: Direct Qdrant and Ollama integration for fine-grained control
 
@@ -23,6 +25,7 @@ A document processing and retrieval pipeline that combines **Vector RAG** and **
 
 - Python 3.12+
 - [Ollama](https://ollama.ai/) running locally
+- [LibreOffice](https://www.libreoffice.org/) for Office document conversion (pptx, docx, xlsx)
 - Required Ollama models:
 
 ```bash
@@ -118,7 +121,9 @@ The wizard will:
 
 ```bash
 mkdir -p data/pdfs
-# Copy your PDF files to data/pdfs/
+# Copy your documents to data/pdfs/
+# Supports: PDF, PPTX, DOCX, XLSX, HTML, Markdown, images
+# Non-PDF files are automatically converted to PDF during ingestion
 ```
 
 #### 2. Configure Environment
@@ -204,20 +209,21 @@ Access the chat interface at `http://localhost:7860`
 
 #### Ingestion Pipeline (`src/run_ingestion_pipeline.py`)
 
-Orchestrates the 10-stage document processing pipeline:
+Orchestrates the 11-stage document processing pipeline:
 
 | Stage | Module | Description |
 |-------|--------|-------------|
-| 1. PDF Conversion | `convert_pdf_to_image.py` | Converts PDFs to 600 DPI images |
-| 2. Object Detection | `extract_objects_from_image.py` | YOLOv11 detects text, tables, pictures |
-| 3. Text Extraction | `parse_image_with_text.py` | Granite-DocLing extracts document text |
-| 4. Table Extraction | `parse_image_with_table.py` | Converts tables to markdown format |
-| 5. Image Description | `create_image_description.py` | Vision LLM describes images (async) |
-| 6. Text Chunking | `chunk_text_data.py` | Semantic chunking with breakpoint detection |
-| 7. Table Chunking | `chunk_table_data.py` | Chunks and summarizes tables |
-| 8. Embeddings | `create_embeddings.py` | Generates vectors with SHA256 caching |
-| 9. Indexing | `build_indexes.py` | Builds Qdrant vector + keyword indexes |
-| 10. GraphRAG | `extract_entities.py` + `knowledge_graph.py` | Extracts entities, builds graph |
+| 1. Document Conversion | `convert_to_pdf.py` | Converts Office docs, HTML, images to PDF |
+| 2. PDF Conversion | `convert_pdf_to_image.py` | Converts PDFs to 600 DPI images |
+| 3. Object Detection | `extract_objects_from_image.py` | YOLOv11 detects text, tables, pictures |
+| 4. Text Extraction | `parse_image_with_text.py` | Granite-DocLing extracts document text |
+| 5. Table Extraction | `parse_image_with_table.py` | Converts tables to markdown format |
+| 6. Image Description | `create_image_description.py` | Vision LLM describes images (async) |
+| 7. Text Chunking | `chunk_text_data.py` | Semantic chunking with breakpoint detection |
+| 8. Table Chunking | `chunk_table_data.py` | Chunks and summarizes tables |
+| 9. Embeddings | `create_embeddings.py` | Generates vectors with SHA256 caching |
+| 10. Indexing | `build_indexes.py` | Builds Qdrant vector + keyword indexes |
+| 11. GraphRAG | `extract_entities.py` + `knowledge_graph.py` | Extracts entities, builds graph |
 
 #### Semantic Chunker (`src/chunk_text_data.py`)
 
@@ -325,7 +331,7 @@ Central configuration hub with environment variable overrides:
 
 | Category | Settings |
 |----------|----------|
-| **Paths** | PDF_DIR, IMAGE_DIR, DETECTION_DIR, PROCESSED_DIR, CHUNKS_DIR, EMBEDDINGS_DIR, INDEX_DIR |
+| **Paths** | PDF_DIR, NON_PDF_DIR, IMAGE_DIR, DETECTION_DIR, PROCESSED_DIR, CHUNKS_DIR, EMBEDDINGS_DIR, INDEX_DIR |
 | **YOLO** | Confidence: 0.2, IOU: 0.8 |
 | **Chunking** | Max size: 512 tokens, Buffer: 5 sentences, Breakpoint: 95th percentile |
 | **Retrieval** | Top-K children: 10, Top-K reranked: 5, Top-K refs: 3 |
@@ -338,13 +344,14 @@ cognidoc/
 ├── config/
 │   └── graph_schema.yaml          # GraphRAG entity/relationship configuration
 ├── data/
-│   ├── pdfs/                      # Input: PDF files
-│   ├── images/                    # Stage 1: Page images (600 DPI)
-│   ├── detections/                # Stage 2: YOLO detection crops
-│   ├── processed/                 # Stage 3-5: Extracted text/tables/descriptions
-│   ├── chunks/                    # Stage 6-7: Parent + child chunks
-│   ├── embeddings/                # Stage 8: Embedding vectors (JSON)
-│   ├── indexes/                   # Stage 9-10: Vector/keyword/graph indexes
+│   ├── pdfs/                      # Input: PDF files (and converted docs)
+│   ├── non_pdfs/                  # Archive: Original non-PDF files after conversion
+│   ├── images/                    # Stage 2: Page images (600 DPI)
+│   ├── detections/                # Stage 3: YOLO detection crops
+│   ├── processed/                 # Stage 4-6: Extracted text/tables/descriptions
+│   ├── chunks/                    # Stage 7-8: Parent + child chunks
+│   ├── embeddings/                # Stage 9: Embedding vectors (JSON)
+│   ├── indexes/                   # Stage 10-11: Vector/keyword/graph indexes
 │   │   ├── child_documents/       # Vector index metadata
 │   │   ├── parent_documents/      # Keyword index metadata
 │   │   └── knowledge_graph/       # Graph persistence (gpickle + JSON)
@@ -356,6 +363,7 @@ cognidoc/
 │   ├── setup.py                   # Interactive setup wizard
 │   ├── run_ingestion_pipeline.py  # Main pipeline orchestrator
 │   ├── cognidoc_app.py            # Gradio chat interface
+│   ├── convert_to_pdf.py          # Multi-format document to PDF conversion
 │   ├── hybrid_retriever.py        # Vector + Graph fusion
 │   ├── knowledge_graph.py         # NetworkX graph with communities
 │   ├── extract_entities.py        # LLM entity/relationship extraction
@@ -375,6 +383,7 @@ cognidoc/
 python -m src.run_ingestion_pipeline [OPTIONS]
 
 # Skip stages
+--skip-conversion     # Skip non-PDF to PDF conversion
 --skip-pdf            # Skip PDF to image conversion
 --skip-yolo           # Skip YOLO detection
 --skip-extraction     # Skip text/table extraction
@@ -483,6 +492,9 @@ make refactor  # Format + lint
 | `ollama` | Local LLM inference |
 | `ultralytics` | YOLO object detection |
 | `pdf2image` | PDF conversion |
+| `weasyprint` | HTML/Markdown to PDF |
+| `reportlab` | Text to PDF |
+| `Pillow` | Image processing and conversion |
 | `gradio` | Web interface |
 | `tiktoken` | Token counting |
 | `networkx` | Knowledge graph |
