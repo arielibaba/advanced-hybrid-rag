@@ -33,6 +33,7 @@ from .constants import (
     SYSTEM_PROMPT_GENERATE_FINAL_ANSWER,
     USER_PROMPT_GENERATE_FINAL_ANSWER,
     ENABLE_RERANKING,
+    ENABLE_CITATION_VERIFICATION,
 )
 from .helpers import (
     clear_pytorch_cache,
@@ -49,6 +50,7 @@ from .utils.rag_utils import (
     NodeWithScore,
     rerank_documents,
 )
+from .utils.advanced_rag import verify_citations
 from .hybrid_retriever import HybridRetriever, HybridRetrievalResult
 from .utils.logger import logger, retrieval_metrics
 
@@ -472,6 +474,25 @@ def chat_conversation(
     final = history[-1]["content"].strip()
     if not final.lower().startswith("no relevant details"):
         final += "\n\n---\n**References:**\n" + "\n".join(refs)
+
+    # #15: Citation verification (optional)
+    if ENABLE_CITATION_VERIFICATION and reranked:
+        try:
+            all_supported, claim_results, summary = verify_citations(
+                answer=final,
+                documents=[nws.node for nws in reranked],
+                model=LLM,
+            )
+            if not all_supported:
+                unsupported = [c.claim for c in claim_results if not c.supported]
+                if unsupported:
+                    final += "\n\n---\n**Note:** Some claims may not be fully supported by the source documents."
+                    logger.warning(f"Citation verification: {len(unsupported)} unsupported claims")
+            else:
+                logger.debug("Citation verification: all claims supported")
+        except Exception as e:
+            logger.warning(f"Citation verification failed: {e}")
+
     history[-1]["content"] = final
 
     # Log performance

@@ -132,6 +132,9 @@ BREAKPOINT_THRESHOLD_TYPE = "percentile"
 BREAKPOINT_THRESHOLD_AMOUNT = 0.95
 SENTENCE_SPLIT_REGEX = r"\n\n\n"
 
+# Overlapping chunks (#2)
+CHUNK_OVERLAP_PERCENTAGE = float(os.getenv("CHUNK_OVERLAP_PERCENTAGE", "0.1"))  # 10% overlap
+
 # =============================================================================
 # Indexing Configuration
 # =============================================================================
@@ -149,6 +152,39 @@ TOP_K_REFS = int(os.getenv("TOP_K_REFS", "3"))
 
 # Reranking toggle (can be overridden at runtime)
 ENABLE_RERANKING = os.getenv("ENABLE_RERANKING", "true").lower() == "true"
+
+# =============================================================================
+# Advanced RAG Configuration
+# =============================================================================
+
+# Hybrid Search (#7): BM25 + Dense vectors
+ENABLE_HYBRID_SEARCH = os.getenv("ENABLE_HYBRID_SEARCH", "true").lower() == "true"
+HYBRID_SEARCH_ALPHA = float(os.getenv("HYBRID_SEARCH_ALPHA", "0.6"))  # Weight for dense (0.0-1.0)
+BM25_K1 = float(os.getenv("BM25_K1", "1.5"))  # Term frequency saturation
+BM25_B = float(os.getenv("BM25_B", "0.75"))   # Length normalization
+BM25_INDEX_PATH = str((Path(INDEX_DIR) / "bm25_index.json").resolve())
+
+# Cross-Encoder Reranking (#9)
+ENABLE_CROSS_ENCODER = os.getenv("ENABLE_CROSS_ENCODER", "true").lower() == "true"
+CROSS_ENCODER_BATCH_SIZE = int(os.getenv("CROSS_ENCODER_BATCH_SIZE", "5"))
+
+# Lost-in-the-Middle Reordering (#14)
+ENABLE_LOST_IN_MIDDLE_REORDER = os.getenv("ENABLE_LOST_IN_MIDDLE_REORDER", "true").lower() == "true"
+
+# Contextual Compression (#13)
+ENABLE_CONTEXTUAL_COMPRESSION = os.getenv("ENABLE_CONTEXTUAL_COMPRESSION", "true").lower() == "true"
+COMPRESSION_MAX_TOKENS_PER_DOC = int(os.getenv("COMPRESSION_MAX_TOKENS_PER_DOC", "200"))
+
+# Citation Verification (#15)
+ENABLE_CITATION_VERIFICATION = os.getenv("ENABLE_CITATION_VERIFICATION", "false").lower() == "true"
+
+# Multi-Index by Content Type (#17)
+ENABLE_MULTI_INDEX = os.getenv("ENABLE_MULTI_INDEX", "false").lower() == "true"
+CONTENT_TYPE_WEIGHTS = {
+    "text": 1.0,
+    "table": 0.9,
+    "image": 0.8,
+}
 
 # =============================================================================
 # Convert Path objects to strings for external use

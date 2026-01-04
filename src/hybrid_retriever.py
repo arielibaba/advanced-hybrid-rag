@@ -3,13 +3,17 @@ Hybrid Retriever module combining Vector RAG and GraphRAG.
 
 Provides:
 - Query analysis and routing
+- BM25 + Dense hybrid search (#7)
+- Cross-encoder reranking (#9)
+- Lost-in-the-middle reordering (#14)
+- Contextual compression (#13)
 - Result fusion from multiple sources
-- LLM-based reranking of combined results
 """
 
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import ollama
@@ -24,6 +28,16 @@ from .constants import (
     INDEX_DIR,
     TOP_K_RETRIEVED_CHILDREN,
     TOP_K_RERANKED_PARENTS,
+    ENABLE_HYBRID_SEARCH,
+    HYBRID_SEARCH_ALPHA,
+    BM25_K1,
+    BM25_B,
+    BM25_INDEX_PATH,
+    ENABLE_CROSS_ENCODER,
+    CROSS_ENCODER_BATCH_SIZE,
+    ENABLE_LOST_IN_MIDDLE_REORDER,
+    ENABLE_CONTEXTUAL_COMPRESSION,
+    COMPRESSION_MAX_TOKENS_PER_DOC,
 )
 from .utils.rag_utils import (
     VectorIndex,
@@ -31,6 +45,15 @@ from .utils.rag_utils import (
     Document,
     NodeWithScore,
     rerank_documents,
+)
+from .utils.advanced_rag import (
+    BM25Index,
+    hybrid_search_fusion,
+    cross_encoder_rerank,
+    reorder_lost_in_middle,
+    compress_context,
+    MetadataFilter,
+    filter_by_metadata,
 )
 from .utils.logger import logger
 
@@ -249,6 +272,12 @@ class HybridRetriever:
     """
     Hybrid retriever combining Vector RAG and GraphRAG.
 
+    Advanced features:
+    - BM25 + Dense hybrid search (#7)
+    - Cross-encoder reranking (#9)
+    - Lost-in-the-middle reordering (#14)
+    - Contextual compression (#13)
+
     Usage:
         retriever = HybridRetriever()
         retriever.load()
@@ -261,15 +290,18 @@ class HybridRetriever:
         vector_store_path: str = None,
         index_path: str = None,
         graph_path: str = None,
+        bm25_index_path: str = None,
     ):
         self.config = config or get_graph_config()
         self.vector_store_path = vector_store_path or VECTOR_STORE_DIR
         self.index_path = index_path or INDEX_DIR
         self.graph_path = graph_path
+        self.bm25_index_path = bm25_index_path or BM25_INDEX_PATH
 
         # Components (lazy-loaded)
         self._vector_index: Optional[VectorIndex] = None
         self._keyword_index: Optional[KeywordIndex] = None
+        self._bm25_index: Optional[BM25Index] = None  # #7: BM25 for hybrid search
         self._graph_retriever: Optional[GraphRetriever] = None
 
     def load(self) -> Dict[str, bool]:
@@ -281,6 +313,7 @@ class HybridRetriever:
         status = {
             "vector_index": False,
             "keyword_index": False,
+            "bm25_index": False,
             "graph": False,
         }
 
@@ -301,6 +334,27 @@ class HybridRetriever:
             logger.info("Keyword index loaded")
         except Exception as e:
             logger.warning(f"Failed to load keyword index: {e}")
+
+        # Load BM25 index (#7: Hybrid search)
+        if ENABLE_HYBRID_SEARCH:
+            try:
+                if Path(self.bm25_index_path).exists():
+                    self._bm25_index = BM25Index.load(self.bm25_index_path)
+                    status["bm25_index"] = True
+                    logger.info("BM25 index loaded for hybrid search")
+                else:
+                    # Build BM25 index from keyword index documents
+                    if self._keyword_index:
+                        self._bm25_index = BM25Index(k1=BM25_K1, b=BM25_B)
+                        docs = self._keyword_index.get_all_documents()
+                        if docs:
+                            bm25_docs = [{"text": d.text, "metadata": d.metadata} for d in docs]
+                            self._bm25_index.add_documents(bm25_docs)
+                            self._bm25_index.save(self.bm25_index_path)
+                            status["bm25_index"] = True
+                            logger.info(f"Built and saved BM25 index with {len(docs)} documents")
+            except Exception as e:
+                logger.warning(f"Failed to load/build BM25 index: {e}")
 
         # Load graph retriever
         try:
@@ -325,15 +379,25 @@ class HybridRetriever:
         top_k: int = None,
         use_reranking: bool = True,
         model: str = None,
+        use_hybrid_search: bool = None,
+        use_cross_encoder: bool = None,
+        use_lost_in_middle: bool = None,
+        use_compression: bool = None,
+        metadata_filters: List[MetadataFilter] = None,
     ) -> HybridRetrievalResult:
         """
-        Perform hybrid retrieval.
+        Perform hybrid retrieval with advanced RAG features.
 
         Args:
             query: Search query
             top_k: Number of results to retrieve
-            use_reranking: Whether to use LLM reranking
+            use_reranking: Whether to use reranking (cross-encoder or LLM)
             model: LLM model to use
+            use_hybrid_search: Use BM25+dense hybrid (default from config)
+            use_cross_encoder: Use cross-encoder reranking (default from config)
+            use_lost_in_middle: Apply lost-in-middle reordering (default from config)
+            use_compression: Apply contextual compression (default from config)
+            metadata_filters: List of MetadataFilter for filtering results (#16)
 
         Returns:
             HybridRetrievalResult with combined context
@@ -343,6 +407,16 @@ class HybridRetriever:
         if top_k is None:
             top_k = TOP_K_RETRIEVED_CHILDREN
 
+        # Use config defaults if not specified
+        if use_hybrid_search is None:
+            use_hybrid_search = ENABLE_HYBRID_SEARCH and self._bm25_index is not None
+        if use_cross_encoder is None:
+            use_cross_encoder = ENABLE_CROSS_ENCODER
+        if use_lost_in_middle is None:
+            use_lost_in_middle = ENABLE_LOST_IN_MIDDLE_REORDER
+        if use_compression is None:
+            use_compression = ENABLE_CONTEXTUAL_COMPRESSION
+
         # Analyze query
         analysis = analyze_query(query, self.config)
 
@@ -350,11 +424,41 @@ class HybridRetriever:
         vector_results = []
         graph_result = None
 
-        # Vector retrieval
+        # Vector retrieval (with optional BM25 hybrid)
         if analysis.use_vector and self._vector_index:
             try:
-                vector_results = self._vector_index.search(query, top_k=top_k)
-                logger.debug(f"Vector retrieval: {len(vector_results)} results")
+                # Dense vector search
+                dense_results = self._vector_index.search(query, top_k=top_k)
+                logger.debug(f"Dense retrieval: {len(dense_results)} results")
+
+                # #7: Hybrid search with BM25
+                if use_hybrid_search and self._bm25_index:
+                    sparse_results = self._bm25_index.search(query, top_k=top_k)
+                    logger.debug(f"BM25 retrieval: {len(sparse_results)} results")
+
+                    # Convert to common format for fusion
+                    dense_list = [(nws.node, nws.score) for nws in dense_results]
+                    sparse_list = [
+                        (Document(text=doc["text"], metadata=doc.get("metadata", {})), score)
+                        for doc, score in sparse_results
+                    ]
+
+                    # Fuse results using RRF
+                    fused = hybrid_search_fusion(
+                        dense_list,
+                        sparse_list,
+                        alpha=HYBRID_SEARCH_ALPHA,
+                        top_k=top_k,
+                    )
+
+                    # Convert back to NodeWithScore
+                    vector_results = [
+                        NodeWithScore(node=doc if isinstance(doc, Document) else Document(text=str(doc)), score=score)
+                        for doc, score in fused
+                    ]
+                    logger.debug(f"Hybrid fusion: {len(vector_results)} results (alpha={HYBRID_SEARCH_ALPHA})")
+                else:
+                    vector_results = dense_results
 
                 # Get parent documents
                 if self._keyword_index and vector_results:
@@ -370,14 +474,56 @@ class HybridRetriever:
                                     parent_results.append(NodeWithScore(node=parent, score=nws.score))
                                     seen_parents.add(parent.metadata.get("name"))
 
-                    # Rerank if enabled
-                    if use_reranking and parent_results:
-                        parent_results = rerank_documents(
-                            parent_results,
-                            query,
-                            model,
-                            top_n=TOP_K_RERANKED_PARENTS,
+                    # #16: Metadata filtering
+                    if metadata_filters and parent_results:
+                        filtered_docs = filter_by_metadata(
+                            [nws.node for nws in parent_results],
+                            metadata_filters,
+                            match_all=True,
                         )
+                        if filtered_docs:
+                            parent_results = [
+                                NodeWithScore(node=doc, score=0.5)
+                                for doc in filtered_docs
+                            ]
+                            logger.debug(f"Metadata filtering: {len(parent_results)} results after filtering")
+                        else:
+                            logger.warning("Metadata filtering returned no results, using unfiltered")
+
+                    # Reranking: #9 Cross-encoder or LLM-based
+                    if use_reranking and parent_results:
+                        if use_cross_encoder:
+                            # #9: Cross-encoder reranking
+                            reranked = cross_encoder_rerank(
+                                query=query,
+                                documents=[nws.node for nws in parent_results],
+                                model=model,
+                                top_n=TOP_K_RERANKED_PARENTS,
+                                batch_size=CROSS_ENCODER_BATCH_SIZE,
+                            )
+                            parent_results = [
+                                NodeWithScore(node=doc, score=score)
+                                for doc, score in reranked
+                            ]
+                            logger.debug(f"Cross-encoder reranking: {len(parent_results)} results")
+                        else:
+                            # Fallback to LLM reranking
+                            parent_results = rerank_documents(
+                                parent_results,
+                                query,
+                                model,
+                                top_n=TOP_K_RERANKED_PARENTS,
+                            )
+                            logger.debug(f"LLM reranking: {len(parent_results)} results")
+
+                    # #14: Lost-in-the-middle reordering
+                    if use_lost_in_middle and len(parent_results) > 2:
+                        docs_ordered = reorder_lost_in_middle([nws.node for nws in parent_results])
+                        parent_results = [
+                            NodeWithScore(node=doc, score=parent_results[i].score if i < len(parent_results) else 0)
+                            for i, doc in enumerate(docs_ordered)
+                        ]
+                        logger.debug("Applied lost-in-the-middle reordering")
 
                     # Use parent results as main vector results
                     if parent_results:
@@ -406,6 +552,25 @@ class HybridRetriever:
             model,
         )
 
+        # #13: Contextual compression
+        if use_compression and vector_results:
+            try:
+                compressed_texts = compress_context(
+                    query=query,
+                    documents=[nws.node for nws in vector_results],
+                    model=model,
+                    max_tokens_per_doc=COMPRESSION_MAX_TOKENS_PER_DOC,
+                )
+                # Update fused context with compressed content
+                if compressed_texts:
+                    compressed_context = "\n\n".join(compressed_texts)
+                    fused_context = f"=== COMPRESSED DOCUMENT CONTEXT ===\n{compressed_context}"
+                    if graph_result and graph_result.context:
+                        fused_context = f"=== KNOWLEDGE GRAPH CONTEXT ===\n{graph_result.context}\n\n{fused_context}"
+                    logger.debug(f"Applied contextual compression: {len(compressed_texts)} segments")
+            except Exception as e:
+                logger.warning(f"Contextual compression failed: {e}")
+
         return HybridRetrievalResult(
             query=query,
             query_analysis=analysis,
@@ -417,6 +582,10 @@ class HybridRetriever:
                 "vector_count": len(vector_results),
                 "graph_entities": len(graph_result.entities) if graph_result else 0,
                 "query_type": analysis.query_type.value,
+                "hybrid_search": use_hybrid_search,
+                "cross_encoder": use_cross_encoder,
+                "lost_in_middle": use_lost_in_middle,
+                "compression": use_compression,
             },
         )
 

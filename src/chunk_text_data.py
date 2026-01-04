@@ -231,20 +231,30 @@ class SemanticChunker:
 def hard_split(
     text: str,
     max_chunk_size: int,
-    overlap: int = 0
+    overlap: int = 0,
+    overlap_percentage: float = 0.1,
 ) -> List[str]:
     """
     Fallback simple splitter that breaks a text into chunks
     of at most max_chunk_size tokens, using whitespace as delimiter.
 
+    Supports overlapping chunks for better context preservation.
+
     Args:
         text: The text to split.
         max_chunk_size: Maximum allowed size for each chunk in tokens.
         overlap: Number of tokens to overlap between consecutive chunks.
+                 If 0 and overlap_percentage > 0, calculates from percentage.
+        overlap_percentage: Percentage of chunk size to use as overlap (0.0-1.0).
+                           Only used if overlap is 0. Default 10%.
 
     Returns:
         List of text segments that are within the token limit.
     """
+    # Calculate overlap from percentage if not explicitly set
+    if overlap == 0 and overlap_percentage > 0:
+        overlap = max(1, int(max_chunk_size * overlap_percentage))
+
     words = text.split()
     chunks: List[str] = []
     current_words: List[str] = []
@@ -254,7 +264,8 @@ def hard_split(
         if get_token_count(" ".join(candidate)) > max_chunk_size:
             chunks.append(" ".join(current_words))
             if overlap > 0:
-                carry = current_words[-overlap:]
+                # Keep last 'overlap' words for context continuity
+                carry = current_words[-overlap:] if len(current_words) >= overlap else current_words
             else:
                 carry = []
             current_words = carry + [word]

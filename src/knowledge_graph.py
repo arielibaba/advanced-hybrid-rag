@@ -38,6 +38,16 @@ class GraphNode:
     community_id: Optional[int] = None
     embedding: Optional[List[float]] = None
 
+    def __hash__(self):
+        """Make GraphNode hashable by using its id."""
+        return hash(self.id)
+
+    def __eq__(self, other):
+        """Compare nodes by id."""
+        if isinstance(other, GraphNode):
+            return self.id == other.id
+        return False
+
 
 @dataclass
 class GraphEdge:
