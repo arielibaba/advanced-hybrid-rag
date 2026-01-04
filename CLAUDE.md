@@ -4,33 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CogniDoc is a document processing and retrieval pipeline combining **Vector RAG** and **GraphRAG**:
-- Converts PDFs to images and detects objects (tables, text, pictures) using YOLO
-- Parses content using Granite-DocLing model
-- Extracts entities and relationships for knowledge graph
-- Generates semantic chunks and embeddings
-- Builds hybrid indexes (vector + knowledge graph) for intelligent retrieval
-- Provides a Gradio chat interface with query routing and LLM reranking
+CogniDoc is a Hybrid RAG (Vector + GraphRAG) document assistant that converts multi-format documents into a searchable knowledge base with intelligent query routing.
 
-## Build and Development Commands
+**Key Design Decisions:**
+- No LangChain/LlamaIndex - direct Qdrant and Ollama integration for fine-grained control
+- Multi-provider LLM support (Gemini default, Ollama, OpenAI, Anthropic)
+- Parent-child chunk hierarchy for context-aware retrieval
+- Custom semantic chunking with breakpoint detection
+
+## Commands
 
 ```bash
-# Package management (uses uv)
-make install          # Install dependencies
+# Setup and installation (uses uv package manager)
+make install          # Create venv and install dependencies
 make sync             # Sync environment with lock file
 
 # Code quality
-make format           # Format code with black
-make lint             # Run pylint on source
-make refactor         # Format and lint
+make format           # Format with black
+make lint             # Run pylint
+make refactor         # Format + lint
 
-# Interactive setup wizard (recommended for new users)
+# First-time setup (interactive wizard)
 python -m src.setup
 
-# Manual pipeline execution
+# Run ingestion pipeline
 python -m src.run_ingestion_pipeline --vision-provider ollama
 
-# Pipeline skip options
+# Launch chat interface
+python -m src.cognidoc_app
+python -m src.cognidoc_app --no-rerank    # Faster, skip LLM reranking
+python -m src.cognidoc_app --share        # Create public link
+```
+
+### Pipeline Skip Flags
+
+Resume from specific stage:
+```bash
+--skip-conversion     # Skip non-PDF to PDF conversion
 --skip-pdf            # Skip PDF to image conversion
 --skip-yolo           # Skip YOLO detection
 --skip-extraction     # Skip text/table extraction
@@ -39,94 +49,95 @@ python -m src.run_ingestion_pipeline --vision-provider ollama
 --skip-embeddings     # Skip embedding generation
 --skip-indexing       # Skip vector index building
 --skip-graph          # Skip knowledge graph building
---force-reembed       # Re-embed all content (ignore cache)
-
-# Launch CogniDoc chat interface
-python -m src.cognidoc_app
-python -m src.cognidoc_app --no-rerank    # Faster, skip LLM reranking
-python -m src.cognidoc_app --share        # Create public link
+--force-reembed       # Re-embed all (ignore cache)
 ```
 
 ## Architecture
 
-### Pipeline Stages
+### Pipeline Flow
 
 ```
-PDFs → Images (600 DPI) → YOLO Detection → Text/Table/Image Extraction
-                                                    ↓
-                                            Semantic Chunks
-                                                    ↓
-                              ┌─────────────────────┴─────────────────────┐
-                              ↓                                           ↓
-                     Vector Embeddings                         Entity/Relationship
-                              ↓                                   Extraction
-                     Qdrant Vector Store                              ↓
-                              ↓                               Knowledge Graph
-                              └─────────────────────┬─────────────────────┘
-                                                    ↓
-                                          Hybrid Retriever
-                                                    ↓
-                                          CogniDoc Chat UI
+Documents → PDF Conversion → Images (600 DPI) → YOLO Detection
+                                                      ↓
+                                    Text/Table/Image Extraction
+                                                      ↓
+                                            Semantic Chunking
+                                       (Parent + Child hierarchy)
+                                                      ↓
+                        ┌─────────────────────────────┴─────────────────────────────┐
+                        ↓                                                           ↓
+               Vector Embeddings                                        Entity/Relationship
+               (Qdrant + BM25)                                              Extraction
+                        ↓                                                           ↓
+                        └─────────────────────────────┬─────────────────────────────┘
+                                                      ↓
+                                            Hybrid Retriever
 ```
 
 ### Key Modules
 
-- **`src/setup.py`**: Interactive setup wizard (provider config, model verification, pipeline execution)
-- **`src/run_ingestion_pipeline.py`**: Main pipeline orchestrator (async)
-- **`src/cognidoc_app.py`**: Gradio chat application with hybrid retrieval
-- **`src/hybrid_retriever.py`**: Combines vector and graph retrieval with query routing
-- **`src/knowledge_graph.py`**: NetworkX-based knowledge graph with community detection
-- **`src/extract_entities.py`**: LLM-based entity/relationship extraction
-- **`src/graph_config.py`**: GraphRAG configuration loader (from `config/graph_schema.yaml`)
-- **`src/constants.py`**: All configuration values and path definitions
-- **`src/utils/rag_utils.py`**: Custom Document, VectorIndex, KeywordIndex, and reranking utilities
+| Module | Purpose |
+|--------|---------|
+| `src/run_ingestion_pipeline.py` | Main async pipeline orchestrator |
+| `src/cognidoc_app.py` | Gradio chat with FastAPI static file serving |
+| `src/hybrid_retriever.py` | Vector + Graph fusion with query orchestration |
+| `src/knowledge_graph.py` | NetworkX graph with Louvain community detection |
+| `src/query_orchestrator.py` | LLM-based query classification and routing |
+| `src/constants.py` | Central config (paths, thresholds, model names) |
+| `src/utils/llm_client.py` | Singleton LLM client (Gemini default) |
+| `src/utils/llm_providers.py` | Multi-provider abstraction layer |
+| `src/utils/rag_utils.py` | Document, VectorIndex, KeywordIndex classes |
 
-### Hybrid Retrieval Flow
+### Query Routing
 
-1. Query rewriting via LLM
-2. Query analysis → classify type (factual, relational, comparative, exploratory, procedural)
-3. Route to vector search and/or graph traversal based on query type
-4. Result fusion with weighted scoring
-5. LLM reranking (optional)
-6. Streaming response generation
+Query types determine vector/graph weight balance:
+- **FACTUAL**: 70% vector, 30% graph
+- **RELATIONAL**: 20% vector, 80% graph
+- **EXPLORATORY**: 0% vector, 100% graph (skips vector)
+- **PROCEDURAL**: 80% vector, 20% graph
 
-### Data Flow
-
-| Stage | Input Directory | Output Directory |
-|-------|----------------|------------------|
-| PDF Conversion | `data/pdfs/` | `data/images/` |
-| YOLO Detection | `data/images/` | `data/detections/` |
-| Content Extraction | `data/detections/` | `data/processed/` |
-| Chunking | `data/processed/` | `data/chunks/` |
-| Embeddings | `data/chunks/` | `data/embeddings/` |
-| Vector Indexing | `data/embeddings/` | `data/indexes/`, `data/vector_store/` |
-| Knowledge Graph | `data/chunks/` | `data/indexes/knowledge_graph/` |
-
-### External Services
-
-Default providers are configurable via `.env` (defaults: Gemini for LLM/vision, Ollama for embeddings):
-- **Ollama** at `http://localhost:11434`: embeddings (qwen3-embedding:0.6b), local LLM fallback
-- **Vision providers**: gemini, ollama, openai, anthropic (configurable)
-
-### GraphRAG Configuration
-
-Edit `config/graph_schema.yaml` to customize:
-- Entity types and their descriptions
-- Relationship types between entities
-- Routing strategy (hybrid, classifier, vector_only)
-- Vector/graph weight balance per query type
+Skip logic: if weight < 15%, that retriever is skipped entirely.
 
 ## Configuration
 
-Key settings in `src/constants.py` (overridable via `.env`):
-- YOLO thresholds: confidence=0.2, IOU=0.8
-- Chunking: max 512 tokens, buffer 5 tokens
-- Retrieval: top-10 children → LLM rerank → top-5 parents
-- Ollama timeout: 180 seconds
+### Key Constants (`src/constants.py`)
 
-## Prompt Templates
+All settings overridable via `.env`:
+- `YOLO_CONFIDENCE_THRESHOLD`: 0.2
+- `MAX_CHUNK_SIZE`: 512 tokens
+- `SEMANTIC_CHUNK_BUFFER`: 5 sentences
+- `TOP_K_RETRIEVED_CHILDREN`: 10
+- `TOP_K_RERANKED_PARENTS`: 5
+- `HYBRID_DENSE_WEIGHT`: 0.6 (dense vs BM25 balance)
 
-All prompts are in `src/prompts/` as markdown files, covering:
-- Image/text/table extraction
-- Query rewriting and expansion
-- Final answer generation
+### Other Config Files
+
+- `config/graph_schema.yaml` - Entity types, relationship types, routing strategy
+- `src/prompts/` - LLM prompt templates (markdown files)
+
+## External Dependencies
+
+- **Ollama** at `localhost:11434` - Local inference (embeddings, fallback LLM)
+- **LibreOffice** - Required for Office document conversion (pptx, docx, xlsx)
+- **Qdrant** - Embedded vector database (no separate server)
+
+Required Ollama models:
+```bash
+ollama pull granite3.3:8b                   # LLM generation
+ollama pull qwen3-embedding:0.6b            # Embeddings
+ollama pull ibm/granite-docling:258m-bf16   # Document parsing
+ollama pull qwen3-vl:8b-instruct            # Vision (optional)
+```
+
+## Data Directories
+
+| Directory | Content |
+|-----------|---------|
+| `data/pdfs/` | Input documents (non-PDFs auto-converted) |
+| `data/images/` | 600 DPI page images |
+| `data/detections/` | YOLO-cropped regions |
+| `data/processed/` | Extracted text/tables/descriptions |
+| `data/chunks/` | Parent and child chunks |
+| `data/indexes/` | Vector/keyword/graph indexes |
+| `data/vector_store/` | Qdrant database |
+| `data/cache/` | Embedding cache (SQLite) |
