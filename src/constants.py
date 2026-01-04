@@ -19,6 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # =============================================================================
 
 PDF_DIR = BASE_DIR / "../data/pdfs"
+NON_PDF_DIR = BASE_DIR / "../data/non_pdfs"
 PDF_CONVERTED_DIR = BASE_DIR / "../data/pdfs_converted"
 IMAGE_DIR = BASE_DIR / "../data/images"
 DETECTION_DIR = BASE_DIR / "../data/detections"
@@ -191,6 +192,7 @@ CONTENT_TYPE_WEIGHTS = {
 # =============================================================================
 
 PDF_DIR = str(PDF_DIR.resolve())
+NON_PDF_DIR = str(NON_PDF_DIR.resolve())
 PDF_CONVERTED_DIR = str(PDF_CONVERTED_DIR.resolve())
 IMAGE_DIR = str(IMAGE_DIR.resolve())
 DETECTION_DIR = str(DETECTION_DIR.resolve())

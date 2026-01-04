@@ -27,6 +27,7 @@ from pathlib import Path
 
 from .constants import (
     PDF_DIR,
+    NON_PDF_DIR,
     IMAGE_DIR,
     DETECTION_DIR,
     YOLO_MODEL_PATH,
@@ -53,6 +54,7 @@ from .constants import (
 
 from .utils.logger import logger, PipelineTimer
 from .helpers import clear_pytorch_cache, load_prompt
+from .convert_to_pdf import convert_non_pdfs_to_pdf
 from .convert_pdf_to_image import convert_pdf_to_image
 from .extract_objects_from_image import extract_objects_from_image
 from .parse_image_with_text import parse_image_with_text
@@ -80,6 +82,11 @@ def parse_args():
         default=None,
         choices=["gemini", "ollama", "openai", "anthropic"],
         help="Vision provider for image description (default: from .env)"
+    )
+    parser.add_argument(
+        "--skip-conversion",
+        action="store_true",
+        help="Skip non-PDF to PDF conversion"
     )
     parser.add_argument(
         "--skip-pdf",
@@ -142,6 +149,7 @@ def parse_args():
 
 async def run_ingestion_pipeline_async(
     vision_provider: str = None,
+    skip_conversion: bool = False,
     skip_pdf: bool = False,
     skip_yolo: bool = False,
     skip_extraction: bool = False,
@@ -159,6 +167,7 @@ async def run_ingestion_pipeline_async(
 
     Args:
         vision_provider: Vision provider for image descriptions
+        skip_conversion: Skip non-PDF to PDF conversion
         skip_pdf: Skip PDF conversion
         skip_yolo: Skip YOLO detection
         skip_extraction: Skip content extraction
@@ -178,6 +187,7 @@ async def run_ingestion_pipeline_async(
     pipeline_timer = PipelineTimer("ingestion_pipeline").start()
 
     stats = {
+        "document_conversion": {},
         "pdf_conversion": {},
         "yolo_detection": {},
         "text_extraction": {},
@@ -195,7 +205,30 @@ async def run_ingestion_pipeline_async(
     pipeline_timer.stage("clear_cache")
     clear_pytorch_cache()
 
-    # 2. Convert PDFs to images
+    # 2. Convert non-PDF documents to PDF
+    if not skip_conversion:
+        pipeline_timer.stage("document_conversion")
+        try:
+            logger.info("Converting non-PDF documents to PDF...")
+            conversion_stats = convert_non_pdfs_to_pdf(
+                input_dir=PDF_DIR,
+                pdf_output_dir=PDF_DIR,
+                non_pdf_archive_dir=NON_PDF_DIR,
+            )
+            stats["document_conversion"] = conversion_stats
+            logger.info(
+                f"Document conversion completed: {conversion_stats['converted']} converted, "
+                f"{conversion_stats['skipped_existing']} skipped, "
+                f"{conversion_stats['failed']} failed"
+            )
+        except Exception as e:
+            logger.error(f"Document conversion failed: {e}")
+            # Continue with pipeline - non-PDF conversion failure shouldn't stop PDF processing
+            logger.warning("Continuing pipeline without non-PDF conversion")
+    else:
+        logger.info("Skipping non-PDF to PDF conversion")
+
+    # 3. Convert PDFs to images
     if not skip_pdf:
         pipeline_timer.stage("pdf_conversion")
         try:
@@ -208,7 +241,7 @@ async def run_ingestion_pipeline_async(
     else:
         logger.info("Skipping PDF conversion")
 
-    # 3. YOLO detection
+    # 4. YOLO detection
     if not skip_yolo:
         pipeline_timer.stage("yolo_detection")
         try:
@@ -230,7 +263,7 @@ async def run_ingestion_pipeline_async(
     else:
         logger.info("Skipping YOLO detection")
 
-    # 4. Extract text and tables
+    # 5. Extract text and tables
     if not skip_extraction:
         pipeline_timer.stage("content_extraction")
         try:
@@ -256,7 +289,7 @@ async def run_ingestion_pipeline_async(
     else:
         logger.info("Skipping content extraction")
 
-    # 5. Generate image descriptions
+    # 6. Generate image descriptions
     if not skip_descriptions:
         pipeline_timer.stage("image_description")
         try:
@@ -282,7 +315,7 @@ async def run_ingestion_pipeline_async(
     else:
         logger.info("Skipping image descriptions")
 
-    # 6. Chunk text data
+    # 7. Chunk text data
     if not skip_chunking:
         pipeline_timer.stage("text_chunking")
         try:
@@ -304,7 +337,7 @@ async def run_ingestion_pipeline_async(
             logger.error(f"Text chunking failed: {e}")
             raise
 
-        # 7. Chunk tables
+        # 8. Chunk tables
         pipeline_timer.stage("table_chunking")
         try:
             logger.info("Chunking table data...")
@@ -330,7 +363,7 @@ async def run_ingestion_pipeline_async(
     else:
         logger.info("Skipping chunking")
 
-    # 8. Generate embeddings
+    # 9. Generate embeddings
     if not skip_embeddings:
         pipeline_timer.stage("embedding_generation")
         try:
@@ -350,7 +383,7 @@ async def run_ingestion_pipeline_async(
     else:
         logger.info("Skipping embeddings")
 
-    # 9. Build vector indexes
+    # 10. Build vector indexes
     if not skip_indexing:
         pipeline_timer.stage("index_building")
         try:
@@ -364,7 +397,7 @@ async def run_ingestion_pipeline_async(
     else:
         logger.info("Skipping index building")
 
-    # 10. Build knowledge graph (GraphRAG)
+    # 11. Build knowledge graph (GraphRAG)
     if not skip_graph:
         pipeline_timer.stage("graph_extraction")
         try:
@@ -441,6 +474,7 @@ def main():
 
     asyncio.run(run_ingestion_pipeline_async(
         vision_provider=args.vision_provider,
+        skip_conversion=args.skip_conversion,
         skip_pdf=args.skip_pdf,
         skip_yolo=args.skip_yolo,
         skip_extraction=args.skip_extraction,
