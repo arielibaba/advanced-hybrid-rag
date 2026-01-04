@@ -257,25 +257,20 @@ def parse_args():
 # Clear GPU cache
 clear_pytorch_cache()
 
-# Load indexes
-logger.info("Loading indexes...")
-
-child_index = VectorIndex.load(
-    path=f"{INDEX_DIR}/{CHILD_DOCUMENTS_INDEX}",
-    qdrant_path=VECTOR_STORE_DIR,
-)
-
-parent_index = KeywordIndex.load(
-    path=f"{INDEX_DIR}/{PARENT_DOCUMENTS_INDEX}",
-)
-
-logger.info("Indexes loaded successfully")
-
-# Load hybrid retriever (includes knowledge graph)
+# Load hybrid retriever (includes vector index, keyword index, and knowledge graph)
 logger.info("Loading hybrid retriever...")
 hybrid_retriever = HybridRetriever()
 hybrid_status = hybrid_retriever.load()
 logger.info(f"Hybrid retriever status: {hybrid_status}")
+
+# Get references to indexes from hybrid retriever for fallback
+child_index = hybrid_retriever._vector_index
+parent_index = hybrid_retriever._keyword_index
+
+if child_index:
+    logger.info("Indexes loaded successfully via hybrid retriever")
+else:
+    logger.warning("Vector index not available - some features may be limited")
 
 
 def chat_conversation(
