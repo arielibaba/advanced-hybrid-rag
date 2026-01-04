@@ -13,7 +13,7 @@ A document processing and retrieval pipeline that combines **Vector RAG** and **
 - **YOLO Object Detection**: Automatically detects and extracts tables, pictures, and text regions
 - **Semantic Chunking**: Uses embeddings to create semantically coherent text chunks
 - **Hierarchical Retrieval**: Parent-child document structure for context-aware search
-- **Query Routing**: Automatically routes queries to vector or graph retrieval based on query type
+- **Intelligent Query Orchestration**: LLM-based classification with smart skip logic and confidence fallback
 - **LLM Reranking**: Improves retrieval quality using LLM-based relevance scoring
 - **Multi-Provider Support**: Ollama (local), Gemini, OpenAI, Anthropic
 - **Cost Estimation**: Shows time and API cost estimates before processing
@@ -239,17 +239,68 @@ NetworkX-based graph with:
 - **Multi-hop traversal**: Configurable depth (default: 3 hops)
 - **Path finding**: Discovers connections between entities
 
+#### Query Orchestrator (`src/query_orchestrator.py`)
+
+Intelligent routing layer that decides how to use Vector and Graph retrieval:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                            QUERY                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    QueryOrchestrator.route()                         │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  LLM Classification (with rule-based fallback)               │    │
+│  │  • Analyzes query intent and structure                       │    │
+│  │  • Extracts mentioned entities                               │    │
+│  │  • Determines optimal retrieval strategy                     │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              │ skip_vector?    │    skip_graph?  │
+              ▼                 │                 ▼
+┌──────────────────────┐       │     ┌──────────────────────┐
+│   VECTOR SEARCH      │       │     │     GRAPH RAG        │
+│  (if not skipped)    │       │     │   (if not skipped)   │
+└──────────────────────┘       │     └──────────────────────┘
+              │                │                 │
+              └────────────────┼─────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Confidence-based Fallback                         │
+│  If one system returns low confidence → boost the other             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Query Types and Routing:**
+
+| Query Type | Example | Vector | Graph | Mode |
+|------------|---------|--------|-------|------|
+| **FACTUAL** | "What is X?" | 70% | 30% | hybrid |
+| **RELATIONAL** | "Relationship between A and B?" | 20% | 80% | hybrid |
+| **COMPARATIVE** | "Compare X vs Y" | 30% | 70% | hybrid |
+| **EXPLORATORY** | "List all main topics" | 0% | 100% | graph_only (skip vector) |
+| **PROCEDURAL** | "How to configure?" | 80% | 20% | hybrid |
+| **ANALYTICAL** | "Analyze the impact of..." | 50% | 50% | hybrid |
+
+**Smart Features:**
+- **Skip Logic**: Skips expensive retrievers when weight < 15%
+- **LLM Classification**: Uses LLM to understand query intent (with rule-based fallback)
+- **Confidence Fallback**: Boosts one system if the other returns low confidence
+- **Entity Detection**: Extracts entities from query for better graph retrieval
+
 #### Hybrid Retriever (`src/hybrid_retriever.py`)
 
-Combines vector and graph retrieval with intelligent query routing:
+Combines vector and graph retrieval with the Query Orchestrator:
 
-```python
-QueryType.FACTUAL      # "What is X?"        → vector=0.6, graph=0.4
-QueryType.RELATIONAL   # "How is X related?" → vector=0.3, graph=0.7
-QueryType.COMPARATIVE  # "Compare X and Y"   → vector=0.4, graph=0.6
-QueryType.EXPLORATORY  # "List all..."       → vector=0.2, graph=0.8
-QueryType.PROCEDURAL   # "How to do X?"      → vector=0.7, graph=0.3
-```
+- **BM25 + Dense Hybrid Search**: Combines keyword (BM25) and semantic (dense) search
+- **Cross-Encoder Reranking**: LLM-based relevance scoring for better precision
+- **Lost-in-the-Middle Reordering**: Places best results at start/end for LLM attention
+- **Contextual Compression**: Extracts query-relevant content to reduce tokens
+- **Metadata Filtering**: Filter results by document attributes
 
 #### Graph Retriever (`src/graph_retrieval.py`)
 
