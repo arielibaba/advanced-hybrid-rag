@@ -23,43 +23,212 @@
 
 ## Architecture Overview
 
-### Pattern: Custom
+### Pattern: Custom Hybrid RAG Pipeline
 
-Based on the module structure and function names, the project appears to implement a custom architecture tailored for hybrid RAG (Retrieval-Augmented Generation). The modules suggest a pipeline-like structure involving data ingestion, processing, and indexing, without adhering to a standard architectural pattern like MVC or layered architecture in a strict sense.
+This project implements a custom architecture tailored for hybrid RAG (Retrieval-Augmented Generation) with multi-modal document processing. The system processes PDFs through object detection, content extraction, semantic chunking, and provides a conversational interface for document querying.
+
+### System Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         ADVANCED HYBRID RAG SYSTEM                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                              INGESTION PIPELINE                                   │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│   PDF Files                                                                       │
+│      │                                                                            │
+│      ▼  [pdf2image @ 600 DPI]                                                    │
+│   PNG Images                                                                      │
+│      │                                                                            │
+│      ▼  [YOLOv11 + DetectionProcessor]                                           │
+│   ┌──────────────────────────────────────────────────────────────┐               │
+│   │              DETECTIONS GROUPEES                              │               │
+│   ├────────────────┬────────────────┬────────────────────────────┤               │
+│   │ *_Text.jpg     │ *_Table_*.jpg  │ *_Picture_*.jpg            │               │
+│   │      │         │       │        │        │                   │               │
+│   │      ▼         │       ▼        │        ▼                   │               │
+│   │ SmolDocling    │  SmolDocling   │  qwen2.5vl:7b              │               │
+│   │ (MLX)          │  (MLX)         │  (Ollama Vision)           │               │
+│   │      │         │       │        │        │                   │               │
+│   │      ▼         │       ▼        │        ▼                   │               │
+│   │  *_Text.md     │ *_Table_*.md   │ *_description.txt          │               │
+│   └────────┬───────┴───────┬────────┴────────┬───────────────────┘               │
+│            │               │                 │                                    │
+│            └───────────────┼─────────────────┘                                    │
+│                            ▼                                                      │
+│   ┌──────────────────────────────────────────────────────────────┐               │
+│   │                    CHUNKING LAYER                            │               │
+│   ├──────────────────────────────────────────────────────────────┤               │
+│   │  Text:        SemanticChunker (LangChain + Ollama)           │               │
+│   │               → fallback: hard_split()                       │               │
+│   │                                                              │               │
+│   │  Tables:      LLM summaries + overlap chunks                 │               │
+│   │               → granite3.3:8b                                │               │
+│   │                                                              │               │
+│   │  Descriptions: hard_split() direct                           │               │
+│   │                                                              │               │
+│   │  Structure:   parent_chunk ← [child_1, child_2, ...]         │               │
+│   └──────────────────────────────────────────────────────────────┘               │
+│                            │                                                      │
+│                            ▼  [ollama.embeddings - mxbai-embed-large]            │
+│   ┌──────────────────────────────────────────────────────────────┐               │
+│   │  EMBEDDINGS (1,024 dimensions + metadata)                    │               │
+│   │  {embedding: [...], metadata: {child, parent, source}}       │               │
+│   └──────────────────────────────────────────────────────────────┘               │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                           STORAGE & INDEXING                                      │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│   ┌─────────────────────────────────┐  ┌─────────────────────────────────┐        │
+│   │    QDRANT (Vector Store)        │  │   LlamaIndex (Persistent)       │        │
+│   ├─────────────────────────────────┤  ├─────────────────────────────────┤        │
+│   │                                 │  │                                 │        │
+│   │  child_documents                │  │  child_documents/               │        │
+│   │  ├─ VectorStoreIndex            │  │  ├─ docstore.json               │        │
+│   │  ├─ Distance: COSINE            │  │  ├─ vector_store.json           │        │
+│   │  └─ Retrieval: top-10           │  │  └─ index_store.json            │        │
+│   │                                 │  │                                 │        │
+│   │  parent_documents               │  │  parent_documents/              │        │
+│   │  ├─ KeywordTableIndex           │  │  ├─ docstore.json               │        │
+│   │  └─ Metadata lookups            │  │  └─ index_store.json            │        │
+│   │                                 │  │                                 │        │
+│   └─────────────────────────────────┘  └─────────────────────────────────┘        │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                          INFERENCE & RAG CHAT                                     │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│  User Query                                                                       │
+│      │                                                                            │
+│      ▼  [granite3.3:8b - rewrite_query]                                          │
+│  Rewritten Multi-Questions (bullet points)                                        │
+│      │                                                                            │
+│      ▼  [parse_rewritten_query]                                                  │
+│  Individual Queries [q1, q2, q3...]                                              │
+│      │                                                                            │
+│      ▼  [VectorIndexRetriever - COSINE similarity]                               │
+│  Retrieved Children [top-10] + similarity scores                                 │
+│      │                                                                            │
+│      ▼  [retrieve_from_keyword_index]                                            │
+│  Parent Documents [linked via metadata]                                          │
+│      │                                                                            │
+│      ▼  [deduplicate by parent name]                                             │
+│  Unique Parent Candidates                                                        │
+│      │                                                                            │
+│      ▼  [LLMRerank - granite3.3:8b]                                              │
+│  Reranked Parents [top-5 by relevance]                                           │
+│      │                                                                            │
+│      ▼  [context_building + references extraction]                               │
+│  Final Context + Source References [top-3 unique]                                │
+│      │                                                                            │
+│      ▼  [granite3.3:8b - streaming generation]                                   │
+│  Generated Response + References                                                 │
+│                                                                                   │
+│   ┌─────────────────────────────────────────────────────────────────┐            │
+│   │                    GRADIO UI                                    │            │
+│   ├─────────────────────────────────────────────────────────────────┤            │
+│   │  Chatbot (streaming, markdown)                                  │            │
+│   │  User Input Textbox                                             │            │
+│   │  Submit Button (queue=True)                                     │            │
+│   │  Reset Button                                                   │            │
+│   └─────────────────────────────────────────────────────────────────┘            │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                           EXTERNAL SERVICES (LOCAL)                               │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│   OLLAMA (http://localhost:11434)                                                │
+│   ├─────────────────────────────────────────────────────────────────────────┐    │
+│   │                                                                         │    │
+│   │  qwen2.5vl:7b          → Vision (image descriptions)                    │    │
+│   │     └─ Temp: 0.2, Top_p: 0.85                                           │    │
+│   │                                                                         │    │
+│   │  granite3.3:8b         → Generation, Rewrite, Expand, Rerank            │    │
+│   │     └─ Temp: 0.7, Top_p: 0.85, Context: 128K                            │    │
+│   │                                                                         │    │
+│   │  mxbai-embed-large     → Embeddings (1,024 dimensions)                  │    │
+│   │                                                                         │    │
+│   └─────────────────────────────────────────────────────────────────────────┘    │
+│                                                                                   │
+│   SmolDocling (MLX - Apple Silicon optimized)                                    │
+│   └─ ds4sd/SmolDocling-256M-preview-mlx-bf16                                     │
+│                                                                                   │
+│   YOLOv11x (Object Detection)                                                    │
+│   └─ Conf: 0.2, IOU: 0.8                                                         │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow Pipeline
+
+| Stage | Input Directory | Output Directory | Module |
+|-------|----------------|------------------|--------|
+| 1. PDF Conversion | `data/pdfs/*.pdf` | `data/images/*.png` | `convert_pdf_to_image.py` |
+| 2. Object Detection | `data/images/*.png` | `data/detections/*_{Text,Table,Picture}.*` | `extract_objects_from_image.py` |
+| 3. Content Extraction | `data/detections/*` | `data/processed/*.md, *.txt` | `parse_image_with_*.py`, `create_image_description.py` |
+| 4. Chunking | `data/processed/*` | `data/chunks/*_parent_*_child_*.txt` | `chunk_text_data.py`, `chunk_table_data.py` |
+| 5. Embeddings | `data/chunks/*` | `data/embeddings/*_embedding.json` | `create_embeddings.py` |
+| 6. Indexing | `data/embeddings/*` | `data/vector_store/`, `data/indexes/` | `build_indexes.py` |
+
+### Key Configuration (constants.py)
+
+| Category | Parameter | Value |
+|----------|-----------|-------|
+| **YOLO** | Confidence | 0.2 |
+| **YOLO** | IOU | 0.8 |
+| **Chunking** | Max tokens | 512 |
+| **Chunking** | Buffer size | 5 |
+| **Retrieval** | Children retrieved | top-10 |
+| **Retrieval** | Parents after rerank | top-5 |
+| **LLM** | Context window | 128K |
+| **LLM** | Memory window | 64K |
+| **Ollama** | Timeout | 180s |
 
 ### Layers
 
-- **Data Ingestion**: Loading and converting data from various sources (PDFs, images, text files).
+- **Data Ingestion**: PDF conversion to high-resolution images (600 DPI) and YOLO-based object detection (tables, text, pictures).
 
-- **Data Processing & Chunking**: Splitting data into smaller chunks suitable for embedding and retrieval.
+- **Content Extraction**: SmolDocling MLX for text/table OCR, Vision LLM (qwen2.5vl) for image descriptions.
 
-- **Embedding & Indexing**: Creating embeddings for the data chunks and building indexes for efficient retrieval.
+- **Data Processing & Chunking**: Semantic chunking with LangChain + Ollama embeddings, hierarchical parent-child structure.
 
-- **Utilities**: Providing helper functions for logging, text manipulation, file handling, and OpenAI API interactions.
+- **Embedding & Indexing**: Vector embeddings (mxbai-embed-large), hybrid storage with Qdrant (vectors) and LlamaIndex (keywords).
 
-- **Orchestration**: Managing the overall data ingestion and indexing pipeline.
+- **RAG Inference**: Multi-step retrieval with query rewriting, vector search, parent lookup, LLM reranking, and streaming generation.
 
-
-### Data Flow
-The data flow starts with loading and converting data from various sources (PDFs, images, text). This data is then processed and chunked into smaller units. Embeddings are created for these chunks, and indexes are built to enable efficient retrieval. The `run_ingestion_pipeline.py` module likely orchestrates this entire process.
-
+- **Utilities**: Logging, text manipulation, file handling, and API interactions.
 
 ### Strengths
 
-- Modularity: The code is divided into well-defined modules, each responsible for a specific task.
+- **Multi-modal Processing**: Handles text, tables, and images from PDFs with specialized extraction pipelines.
 
-- Clear separation of concerns: Different layers handle distinct aspects of the RAG pipeline (ingestion, processing, embedding, indexing).
+- **Hierarchical Chunking**: Parent-child relationship enables context-aware retrieval.
 
-- Utility modules: Reusable utility functions promote code maintainability and reduce redundancy.
+- **Hybrid Retrieval**: Combines vector similarity (children) with keyword lookup (parents) for better precision.
 
+- **LLM Reranking**: Improves retrieval quality by reranking with the generation model.
+
+- **Local Inference**: All models run locally via Ollama for privacy and control.
+
+- **Streaming UI**: Real-time response generation with Gradio interface.
 
 ### Architectural Concerns
 
-- **[MEDIUM]** Lack of explicit architectural documentation.: Document the overall architecture and data flow to improve understanding and maintainability.
+- **[MEDIUM]** Tight coupling between modules if not designed carefully: Ensure loose coupling between modules by using interfaces or abstract classes where appropriate.
 
-- **[LOW]** Limited information on error handling and monitoring.: Implement robust error handling and monitoring mechanisms to ensure the pipeline's reliability.
-
-- **[MEDIUM]** Tight coupling between modules if not designed carefully.: Ensure loose coupling between modules by using interfaces or abstract classes where appropriate.
+- **[LOW]** Limited information on error handling and monitoring: Implement robust error handling and monitoring mechanisms to ensure the pipeline's reliability.
 
 
 ---
