@@ -5,6 +5,7 @@ Exports:
 - logger: Structured logging with timing metrics
 - llm_providers: Multi-provider LLM abstraction
 - embedding_cache: Content-based embedding caching
+- rag_utils: Document, Vector/Keyword indexes, reranking
 """
 
 from .logger import (
@@ -33,6 +34,17 @@ from .embedding_cache import (
     get_embedding_cache,
 )
 
+from .rag_utils import (
+    Document,
+    NodeWithScore,
+    VectorIndex,
+    KeywordIndex,
+    get_embedding,
+    get_embedding_dimension,
+    rerank_documents,
+    stream_chat,
+)
+
 __all__ = [
     # Logger
     "logger",
@@ -54,4 +66,13 @@ __all__ = [
     # Embedding Cache
     "EmbeddingCache",
     "get_embedding_cache",
+    # RAG Utilities
+    "Document",
+    "NodeWithScore",
+    "VectorIndex",
+    "KeywordIndex",
+    "get_embedding",
+    "get_embedding_dimension",
+    "rerank_documents",
+    "stream_chat",
 ]

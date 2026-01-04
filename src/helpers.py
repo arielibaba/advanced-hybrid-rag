@@ -26,7 +26,7 @@ from .constants import (
     USER_PROMPT_EXPAND_QUERY,
     LLM,
 )
-from .utils.rag_utils import Document, KeywordIndex
+from .utils.rag_utils import Document, KeywordIndex, stream_chat
 
 
 def clear_pytorch_cache():
@@ -246,24 +246,6 @@ def limit_chat_history(history: List[dict], max_tokens: int = MEMORY_WINDOW) -> 
         truncated.append(msg)
         total_tokens += tokens
     return list(reversed(truncated))
-
-
-def stream_chat(model: str, messages: List[Dict[str, str]], temperature: float = 0.7, top_p: float = 0.85):
-    """
-    Stream chat response from Ollama.
-
-    Yields accumulated response text.
-    """
-    response = ""
-    for chunk in ollama.chat(
-        model=model,
-        messages=messages,
-        stream=True,
-        options={"temperature": temperature, "top_p": top_p},
-    ):
-        if "message" in chunk and "content" in chunk["message"]:
-            response += chunk["message"]["content"]
-            yield response
 
 
 def run_streaming(model: str, messages: List[Dict[str, str]], temperature: float = 0.7, top_p: float = 0.85):

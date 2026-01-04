@@ -148,7 +148,8 @@ def create_embeddings(
         if not file_path.is_file():
             continue
 
-        if "_parent_chunk_" in file_path.name:
+        # Skip parent chunks (but not child chunks which also contain "_parent_chunk_")
+        if "_parent_chunk_" in file_path.name and "_child_chunk_" not in file_path.name:
             stats["skipped_parent"] += 1
             continue
 

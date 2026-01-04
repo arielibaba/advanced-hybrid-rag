@@ -47,8 +47,9 @@ PDFs → Images (600 DPI) → YOLO Detection → Text/Table/Image Extraction
 - **`src/constants.py`**: All configuration values and path definitions
 - **`src/extract_objects_from_image.py`**: `DetectionProcessor` class for YOLO inference and grouping
 - **`src/create_image_description.py`**: Async image processing with semaphore-limited concurrency
-- **`src/chunk_text_data.py`**: Semantic chunking using LangChain with OllamaEmbeddings
-- **`src/build_indexes.py`**: LlamaIndex + Qdrant vector store with hierarchical retrieval
+- **`src/chunk_text_data.py`**: Custom semantic chunking using direct Ollama embeddings (no LangChain)
+- **`src/build_indexes.py`**: Direct Qdrant operations for vector storage (no LlamaIndex)
+- **`src/utils/rag_utils.py`**: Custom Document, VectorIndex, KeywordIndex, and reranking utilities
 
 ### Data Flow
 
@@ -65,8 +66,9 @@ PDFs → Images (600 DPI) → YOLO Detection → Text/Table/Image Extraction
 
 All inference runs locally via Ollama at `http://localhost:11434`:
 - **LLM**: granite3.3:8b (128K context)
-- **Vision**: qwen2.5vl:7b
-- **Embeddings**: mxbai-embed-large
+- **Vision**: qwen3-vl:8b-instruct
+- **Embeddings**: qwen3-embedding:0.6b
+- **Document Parsing**: ibm/granite-docling:258m-bf16
 
 ## Configuration
 

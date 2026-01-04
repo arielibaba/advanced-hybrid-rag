@@ -23,18 +23,8 @@ from .constants import (
     BREAKPOINT_THRESHOLD_TYPE,
     BREAKPOINT_THRESHOLD_AMOUNT,
     SENTENCE_SPLIT_REGEX,
-    OLLAMA_URL
 )
-
-
-# =============================================================================
-# Embedding utilities
-# =============================================================================
-
-def get_embedding(text: str, model: str) -> List[float]:
-    """Get embedding vector for text using Ollama."""
-    response = ollama.embeddings(model=model, prompt=text)
-    return response["embedding"]
+from .utils.rag_utils import get_embedding
 
 
 def get_embeddings_batch(texts: List[str], model: str) -> List[List[float]]:
