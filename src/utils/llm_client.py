@@ -78,6 +78,7 @@ def set_llm_provider(provider: str, model: str = None) -> BaseLLMProvider:
 def llm_chat(
     messages: List[Dict[str, str]],
     temperature: Optional[float] = None,
+    json_mode: bool = False,
 ) -> str:
     """
     Send a chat request to the LLM.
@@ -85,6 +86,7 @@ def llm_chat(
     Args:
         messages: List of {"role": ..., "content": ...} dicts
         temperature: Override default temperature
+        json_mode: Force JSON output (supported by Gemini, OpenAI, Ollama)
 
     Returns:
         Response text from LLM
@@ -99,11 +101,11 @@ def llm_chat(
         original_temp = client.config.temperature
         client.config.temperature = temperature
         try:
-            response = client.chat(msg_objects)
+            response = client.chat(msg_objects, json_mode=json_mode)
         finally:
             client.config.temperature = original_temp
     else:
-        response = client.chat(msg_objects)
+        response = client.chat(msg_objects, json_mode=json_mode)
 
     return response.content
 

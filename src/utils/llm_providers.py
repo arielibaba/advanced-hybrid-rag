@@ -49,6 +49,7 @@ class LLMConfig:
     timeout: float = 180.0
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    json_mode: bool = False  # Force JSON output (supported by Gemini, OpenAI)
     extra_params: dict = field(default_factory=dict)
 
 
@@ -76,8 +77,8 @@ class BaseLLMProvider(ABC):
         self.config = config
 
     @abstractmethod
-    def chat(self, messages: list[Message]) -> LLMResponse:
-        """Send messages and get response."""
+    def chat(self, messages: list[Message], json_mode: bool = False) -> LLMResponse:
+        """Send messages and get response. json_mode forces JSON output if supported."""
         pass
 
     @abstractmethod
@@ -165,19 +166,26 @@ class GeminiProvider(BaseLLMProvider):
 
         return gemini_messages, system_instruction
 
-    def chat(self, messages: list[Message]) -> LLMResponse:
+    def chat(self, messages: list[Message], json_mode: bool = False) -> LLMResponse:
         with timer(f"Gemini chat ({self.config.model})"):
             gemini_messages, system_instruction = self._convert_messages(messages)
 
+            # Build generation config
+            generation_config = {
+                "temperature": self.config.temperature,
+                "top_p": self.config.top_p,
+            }
+
+            # Enable JSON mode if requested (instance or call-level)
+            if json_mode or self.config.json_mode:
+                generation_config["response_mime_type"] = "application/json"
+
             # Create chat with system instruction if present
-            if system_instruction:
+            if system_instruction or json_mode or self.config.json_mode:
                 model = self.genai.GenerativeModel(
                     model_name=self.config.model,
                     system_instruction=system_instruction,
-                    generation_config={
-                        "temperature": self.config.temperature,
-                        "top_p": self.config.top_p,
-                    }
+                    generation_config=generation_config,
                 )
             else:
                 model = self.model
@@ -260,17 +268,22 @@ class OllamaProvider(BaseLLMProvider):
             ollama_messages.append(m)
         return ollama_messages
 
-    def chat(self, messages: list[Message]) -> LLMResponse:
+    def chat(self, messages: list[Message], json_mode: bool = False) -> LLMResponse:
         with timer(f"Ollama chat ({self.config.model})"):
             ollama_messages = self._convert_messages(messages)
-            response = self.client.chat(
-                model=self.config.model,
-                messages=ollama_messages,
-                options={
+            kwargs = {
+                "model": self.config.model,
+                "messages": ollama_messages,
+                "options": {
                     "temperature": self.config.temperature,
                     "top_p": self.config.top_p,
                 },
-            )
+            }
+            # Enable JSON format if requested
+            if json_mode or self.config.json_mode:
+                kwargs["format"] = "json"
+
+            response = self.client.chat(**kwargs)
             return LLMResponse(
                 content=response["message"]["content"],
                 model=self.config.model,
@@ -357,16 +370,21 @@ class OpenAIProvider(BaseLLMProvider):
                 openai_messages.append({"role": msg.role, "content": msg.content})
         return openai_messages
 
-    def chat(self, messages: list[Message]) -> LLMResponse:
+    def chat(self, messages: list[Message], json_mode: bool = False) -> LLMResponse:
         with timer(f"OpenAI chat ({self.config.model})"):
             openai_messages = self._convert_messages(messages)
-            response = self.client.chat.completions.create(
-                model=self.config.model,
-                messages=openai_messages,
-                temperature=self.config.temperature,
-                top_p=self.config.top_p,
-                max_tokens=self.config.max_tokens,
-            )
+            kwargs = {
+                "model": self.config.model,
+                "messages": openai_messages,
+                "temperature": self.config.temperature,
+                "top_p": self.config.top_p,
+                "max_tokens": self.config.max_tokens,
+            }
+            # Enable JSON format if requested
+            if json_mode or self.config.json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+
+            response = self.client.chat.completions.create(**kwargs)
             return LLMResponse(
                 content=response.choices[0].message.content,
                 model=self.config.model,
@@ -447,9 +465,17 @@ class AnthropicProvider(BaseLLMProvider):
 
         return system_prompt, anthropic_messages
 
-    def chat(self, messages: list[Message]) -> LLMResponse:
+    def chat(self, messages: list[Message], json_mode: bool = False) -> LLMResponse:
         with timer(f"Anthropic chat ({self.config.model})"):
             system_prompt, anthropic_messages = self._convert_messages(messages)
+
+            # Anthropic doesn't have native JSON mode, but we can prepend a system instruction
+            if json_mode or self.config.json_mode:
+                json_instruction = "You MUST respond with ONLY valid JSON. No text before or after the JSON."
+                if system_prompt:
+                    system_prompt = f"{json_instruction}\n\n{system_prompt}"
+                else:
+                    system_prompt = json_instruction
 
             kwargs = {
                 "model": self.config.model,

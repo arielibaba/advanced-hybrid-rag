@@ -197,33 +197,90 @@ Extract relationships from the text above. Output ONLY valid JSON, no explanatio
     return prompt
 
 
-def extract_json_from_response(response: str) -> Dict[str, Any]:
-    """Extract JSON from LLM response, handling common issues."""
+def extract_json_from_response(response: str, key: str = "entities") -> Dict[str, Any]:
+    """
+    Extract JSON from LLM response, handling common issues.
+
+    Args:
+        response: Raw LLM response text
+        key: Expected key for list wrapping (e.g., "entities" or "relationships")
+
+    Returns:
+        Dict with the extracted JSON, normalized to have the expected structure
+    """
+    parsed = None
+
     # Try direct parse first
     try:
-        return json.loads(response)
+        parsed = json.loads(response)
     except json.JSONDecodeError:
         pass
 
     # Try to find JSON in markdown code block
-    json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response)
-    if json_match:
-        try:
-            return json.loads(json_match.group(1))
-        except json.JSONDecodeError:
-            pass
+    if parsed is None:
+        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+    # Try to find JSON array
+    if parsed is None:
+        json_match = re.search(r"\[[\s\S]*\]", response)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
 
     # Try to find JSON object
-    json_match = re.search(r"\{[\s\S]*\}", response)
-    if json_match:
-        try:
-            return json.loads(json_match.group(0))
-        except json.JSONDecodeError:
-            pass
+    if parsed is None:
+        json_match = re.search(r"\{[\s\S]*\}", response)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                pass
 
-    # Return empty result
-    logger.warning(f"Failed to parse JSON from response: {response[:200]}...")
-    return {}
+    # Handle parsing failure
+    if parsed is None:
+        logger.warning(f"Failed to parse JSON from response: {response[:200]}...")
+        return {}
+
+    # Normalize structure: if we got a list, wrap it in {key: list}
+    if isinstance(parsed, list):
+        parsed = {key: parsed}
+
+    # Normalize field names (handle French field names from Gemini)
+    if key in parsed and isinstance(parsed[key], list):
+        normalized = []
+        for item in parsed[key]:
+            if isinstance(item, dict):
+                norm_item = {}
+                for k, v in item.items():
+                    # Map common French field names to English
+                    k_lower = k.lower()
+                    if k_lower in ("nom", "name"):
+                        norm_item["name"] = v
+                    elif k_lower in ("type", "type_entite", "type_entité"):
+                        norm_item["type"] = v
+                    elif k_lower in ("description",):
+                        norm_item["description"] = v
+                    elif k_lower in ("confiance", "confidence"):
+                        norm_item["confidence"] = v
+                    elif k_lower in ("source", "source_entity", "entite_source", "entité_source"):
+                        norm_item["source"] = v
+                    elif k_lower in ("target", "target_entity", "cible", "entite_cible", "entité_cible"):
+                        norm_item["target"] = v
+                    elif k_lower in ("relation", "type", "relationship_type", "type_relation"):
+                        norm_item["type"] = v
+                    else:
+                        norm_item[k] = v
+                normalized.append(norm_item)
+        parsed[key] = normalized
+
+    return parsed
 
 
 def extract_entities_from_text(
@@ -251,10 +308,14 @@ def extract_entities_from_text(
 
     try:
         result_text = llm_chat(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": "You are a JSON entity extractor. You MUST respond with ONLY valid JSON, no explanations or text before/after."},
+                {"role": "user", "content": prompt},
+            ],
             temperature=config.extraction.extraction_temperature,
+            json_mode=True,
         )
-        result = extract_json_from_response(result_text)
+        result = extract_json_from_response(result_text, key="entities")
 
         entities = []
         for e in result.get("entities", []):
@@ -311,10 +372,14 @@ def extract_relationships_from_text(
 
     try:
         result_text = llm_chat(
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": "You are a JSON relationship extractor. You MUST respond with ONLY valid JSON, no explanations or text before/after."},
+                {"role": "user", "content": prompt},
+            ],
             temperature=config.extraction.extraction_temperature,
+            json_mode=True,
         )
-        result = extract_json_from_response(result_text)
+        result = extract_json_from_response(result_text, key="relationships")
 
         # Build entity name set for validation
         entity_names = {e.name.lower() for e in entities}
