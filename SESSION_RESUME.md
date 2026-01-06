@@ -1,118 +1,49 @@
-# Session CogniDoc - 6 janvier 2026 (Suite)
+# Session CogniDoc - 6 janvier 2026 (Package Transformation)
 
 ## Résumé de la session
 
-Cette session a préparé la transformation de CogniDoc en package Python réutilisable.
+Cette session a transformé CogniDoc en un package Python installable avec providers flexibles.
 
-## Travaux accomplis (session précédente)
+## Travaux accomplis
 
-### 1. Fix du parsing JSON pour GraphRAG
-- **Problème**: Gemini ignorait l'instruction "Output ONLY valid JSON" et retournait du texte
-- **Solution**: Ajout du paramètre `json_mode` aux providers LLM
-  - `src/utils/llm_providers.py`: Ajout de `json_mode` à `LLMConfig` et aux méthodes `chat()`
-  - `src/utils/llm_client.py`: Ajout du paramètre `json_mode` à `llm_chat()`
-  - `src/extract_entities.py`: Utilisation de `json_mode=True` + normalisation des champs FR→EN
-- **Commit**: `ebb98e3` - "Add JSON mode support for reliable entity extraction"
+### 1. Restructuration du package
 
-### 2. Pipeline d'ingestion complète
-- **Index vectoriel**: 11,484 documents (Qdrant + BM25)
-- **Knowledge Graph**:
-  - 15,183 noeuds (entités)
-  - 20,568 arêtes (relations)
-  - 3,912 communautés (Louvain)
-- **Temps total**: ~13h 24min
+**Avant:** `src/*.py` (modules plats)
+**Après:** `src/cognidoc/` (package Python installable)
 
-### 3. Tests de l'application
-Questions testées avec succès:
-- Avortement: Position de l'Église catholique
-- Euthanasie: Définition et différence avec sédation palliative
-- Contraception: Opposition de l'Église à la contraception artificielle
-- PMA: Enjeux éthiques selon l'enseignement catholique
-- Embryon: Statut de l'embryon humain
-
-## Travaux accomplis (session actuelle)
-
-### 4. Plan de transformation en package Python
-
-L'utilisateur a choisi **Option B** pour la transformation:
-- YOLO optionnel (fallback vers extraction simple)
-- Ollama optionnel (mode cloud-only possible)
-- Configuration réduite à l'essentiel avec smart defaults
-- Providers flexibles (LLM ≠ Embedding provider)
-
-#### Fichiers créés:
-- `IMPLEMENTATION_PLAN.md` - Plan détaillé d'implémentation avec:
-  - Architecture cible du package
-  - Classe `CogniDoc` principale (API Python)
-  - Système de providers flexibles
-  - CLI avec commandes `ingest`, `query`, `serve`, `init`
-  - Configuration simplifiée avec `CogniDocConfig`
-
-#### README mis à jour:
-- Installation depuis GitHub avec optional dependencies
-- Exemples d'utilisation API Python et CLI
-- Tableau des providers supportés
-- Documentation des variables d'environnement
-
-## Prochaines étapes (à implémenter)
-
-### Étape 1: Structure de base
-- [ ] Réorganiser `src/` → `src/cognidoc/`
-- [ ] Créer `pyproject.toml`
-- [ ] Créer `__init__.py` avec exports
-- [ ] Créer classe `CogniDoc` basique
-
-### Étape 2: Providers flexibles
-- [ ] Séparer LLM et Embedding providers
-- [ ] Implémenter provider registry
-- [ ] Ajouter détection automatique des dépendances
-- [ ] Tests de combinaisons (Gemini+Ollama, etc.)
-
-### Étape 3: YOLO optionnel
-- [ ] Créer fallback simple pour extraction
-- [ ] Ajouter détection automatique YOLO
-- [ ] Tester pipeline sans YOLO
-
-### Étape 4: CLI
-- [ ] Implémenter commandes CLI
-- [ ] Ajouter `cognidoc init`
-- [ ] Tester toutes les commandes
-
-### Étape 5: Documentation
-- [ ] Mettre à jour README final
-- [ ] Ajouter exemples d'utilisation
-- [ ] Documenter configuration
-
-## État actuel du projet
-
-### Fichiers d'index (data/indexes/)
-- `child_documents/` - Index vectoriel Qdrant
-- `parent_documents/` - Index des documents parents
-- `bm25_index.json` - Index BM25 pour recherche keyword
-- `knowledge_graph/` - Graphe NetworkX avec communautés
-
-### Commandes utiles
-```bash
-# Lancer l'application
-python -m src.cognidoc_app
-
-# Lancer sans reranking (plus rapide)
-python -m src.cognidoc_app --no-rerank
-
-# Relancer seulement le graphe (si besoin)
-python -m src.run_ingestion_pipeline --skip-conversion --skip-pdf --skip-yolo \
-  --skip-extraction --skip-descriptions --skip-chunking --skip-embeddings --skip-indexing
+Structure finale:
+```
+src/cognidoc/
+├── __init__.py        # Exports: CogniDoc, CogniDocConfig, QueryResult
+├── __main__.py        # python -m cognidoc
+├── api.py             # Classe CogniDoc principale
+├── cli.py             # Interface ligne de commande
+├── utils/
+│   ├── llm_providers.py       # Providers LLM
+│   ├── embedding_providers.py # Providers Embeddings (NOUVEAU)
+│   └── ...
+└── ... (autres modules)
 ```
 
-### Configuration actuelle
-- **LLM par défaut**: Gemini 2.0 Flash
-- **Embeddings**: Ollama qwen3-embedding:0.6b (local)
-- **Port de l'app**: 7860
+### 2. pyproject.toml avec dépendances modulaires
 
-## Décisions de design
+```toml
+[project.optional-dependencies]
+ui = ["gradio>=4.0"]
+yolo = ["ultralytics>=8.0", "opencv-python", "torch"]
+ollama = ["ollama>=0.4"]
+cloud = ["google-generativeai", "openai", "anthropic"]
+all = ["cognidoc[ui,yolo,ollama,cloud,conversion]"]
+```
 
-### Providers flexibles
-L'utilisateur veut pouvoir mixer les providers:
+### 3. Providers flexibles (LLM ≠ Embedding)
+
+Nouveau fichier `embedding_providers.py`:
+- `OllamaEmbeddingProvider`
+- `OpenAIEmbeddingProvider`
+- `GeminiEmbeddingProvider`
+
+Permet des combinaisons comme:
 ```python
 CogniDoc(
     llm_provider="gemini",      # Gemini pour la génération
@@ -120,28 +51,104 @@ CogniDoc(
 )
 ```
 
-### YOLO optionnel
-- Si `ultralytics` n'est pas installé → fallback vers extraction page entière
-- Auto-détection de la disponibilité
+### 4. API Python simple
 
-### Ollama optionnel
-- Mode cloud-only si Ollama non disponible
-- Requiert au moins une clé API (Gemini, OpenAI, ou Anthropic)
+```python
+from cognidoc import CogniDoc
 
-### Installation modulaire
-```bash
-pip install cognidoc              # Base (cloud providers)
-pip install cognidoc[yolo]        # + YOLO detection
-pip install cognidoc[ollama]      # + Ollama local
-pip install cognidoc[ui]          # + Gradio interface
-pip install cognidoc[all]         # Tout inclus
+# Simple
+doc = CogniDoc()
+doc.ingest("./documents/")
+result = doc.query("Quelle est la position sur X?")
+print(result.answer)
+
+# Avec providers spécifiques
+doc = CogniDoc(
+    llm_provider="openai",
+    embedding_provider="openai",
+)
+
+# Lancer l'interface
+doc.launch_ui(port=7860, share=True)
 ```
 
-## Statistiques finales
+### 5. CLI complète
 
-- **Documents source**: ~100+ PDFs de bioéthique catholique
-- **Pages traitées**: ~3,448
-- **Chunks générés**: 11,742 (parent + child)
-- **Entités extraites**: 49,993 (fusionnées en 15,183)
-- **Relations extraites**: 30,808
-- **Appels LLM totaux**: ~27,400
+```bash
+# Commandes disponibles
+cognidoc init --schema --prompts
+cognidoc ingest ./documents --llm gemini --embedding ollama
+cognidoc query "Question?" --show-sources
+cognidoc serve --port 7860 --share
+cognidoc info
+```
+
+### 6. YOLO optionnel avec fallback
+
+- Import conditionnel de YOLO (try/except)
+- Fonctions `is_yolo_available()` et `is_yolo_model_available()`
+- Fallback automatique vers extraction page entière si YOLO absent
+
+## Installation
+
+```bash
+# Depuis GitHub
+pip install git+https://github.com/arielibaba/cognidoc.git
+
+# Avec toutes les options
+pip install "cognidoc[all] @ git+https://github.com/arielibaba/cognidoc.git"
+
+# Développement local
+pip install -e ".[all,dev]"
+```
+
+## Commits de cette session
+
+- `1b55ef4`: Add implementation plan for Python package transformation
+- `f323a76`: Transform CogniDoc into installable Python package
+
+## Tests effectués
+
+```bash
+# Import OK
+python -c "from cognidoc import CogniDoc, __version__; print(__version__)"
+# Output: 0.1.0
+
+# CLI OK
+cognidoc --help
+cognidoc info
+```
+
+## État actuel
+
+Le package est fonctionnel pour:
+- Import Python (`from cognidoc import CogniDoc`)
+- CLI (`cognidoc` command)
+- Providers flexibles (LLM indépendant des Embeddings)
+- YOLO optionnel
+
+## Points à améliorer (future session)
+
+1. **Intégration pipeline**: `doc.ingest()` doit être connecté à `run_ingestion_pipeline.py`
+2. **Warning Gemini**: Migrer de `google.generativeai` vers `google.genai`
+3. **Tests unitaires**: Ajouter des tests pour les nouveaux providers
+4. **Documentation**: Compléter les docstrings et exemples
+
+## Fichiers modifiés clés
+
+| Fichier | Changement |
+|---------|------------|
+| `pyproject.toml` | Dépendances modulaires, CLI entry point |
+| `src/cognidoc/__init__.py` | Exports publics |
+| `src/cognidoc/api.py` | Classe CogniDoc (NOUVEAU) |
+| `src/cognidoc/cli.py` | Interface CLI (NOUVEAU) |
+| `src/cognidoc/utils/embedding_providers.py` | Providers embeddings (NOUVEAU) |
+| `src/cognidoc/utils/rag_utils.py` | Utilise embedding_providers |
+| `src/cognidoc/extract_objects_from_image.py` | YOLO optionnel |
+
+## Statistiques du projet
+
+- **Package**: cognidoc 0.1.0
+- **Python**: >=3.10
+- **Documents indexés**: 133 PDFs
+- **Index**: Vector + Graph (prêt à l'emploi)
