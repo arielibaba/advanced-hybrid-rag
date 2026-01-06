@@ -12,28 +12,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Get the directory of the current file (constants.py)
-BASE_DIR = Path(__file__).resolve().parent
+# After restructuring: src/cognidoc/constants.py -> project root is ../../
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # =============================================================================
 # Directory Paths
 # =============================================================================
 
-PDF_DIR = BASE_DIR / "../data/pdfs"
-NON_PDF_DIR = BASE_DIR / "../data/non_pdfs"
-IMAGE_DIR = BASE_DIR / "../data/images"
-DETECTION_DIR = BASE_DIR / "../data/detections"
-PROCESSED_DIR = BASE_DIR / "../data/processed"
-CHUNKS_DIR = BASE_DIR / "../data/chunks"
-EMBEDDINGS_DIR = BASE_DIR / "../data/embeddings"
-VECTOR_STORE_DIR = BASE_DIR / "../data/vector_store"
-INDEX_DIR = BASE_DIR / "../data/indexes"
-CACHE_DIR = BASE_DIR / "../data/cache"
+PDF_DIR = BASE_DIR / "data/pdfs"
+NON_PDF_DIR = BASE_DIR / "data/non_pdfs"
+IMAGE_DIR = BASE_DIR / "data/images"
+DETECTION_DIR = BASE_DIR / "data/detections"
+PROCESSED_DIR = BASE_DIR / "data/processed"
+CHUNKS_DIR = BASE_DIR / "data/chunks"
+EMBEDDINGS_DIR = BASE_DIR / "data/embeddings"
+VECTOR_STORE_DIR = BASE_DIR / "data/vector_store"
+INDEX_DIR = BASE_DIR / "data/indexes"
+CACHE_DIR = BASE_DIR / "data/cache"
 
 # =============================================================================
 # YOLO Model Configuration
 # =============================================================================
 
-YOLO_MODEL_PATH = BASE_DIR / "../models/YOLOv11/yolov11x_best.pt"
+YOLO_MODEL_PATH = BASE_DIR / "models/YOLOv11/yolov11x_best.pt"
 YOLO_CONFIDENCE_THRESHOLD = 0.2
 YOLO_IOU_THRESHOLD = 0.8
 

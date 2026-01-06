@@ -17,7 +17,7 @@ from .utils.logger import logger
 
 
 # Default configuration file path
-DEFAULT_CONFIG_PATH = BASE_DIR / "../config/graph_schema.yaml"
+DEFAULT_CONFIG_PATH = BASE_DIR / "config/graph_schema.yaml"
 
 
 @dataclass
