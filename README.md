@@ -6,482 +6,252 @@ A document processing and retrieval pipeline that combines **Vector RAG** and **
 
 ## Features
 
-- **Interactive Setup Wizard**: Guided configuration with API validation and model installation
-- **Multi-Format Document Conversion**: Automatic conversion of Office documents (pptx, docx, xlsx), HTML, Markdown, and images to PDF
 - **Hybrid RAG**: Combines vector similarity search with knowledge graph traversal
 - **GraphRAG**: Automatic entity/relationship extraction with community detection
-- **Multi-modal Document Processing**: Handles text, tables, and images from PDFs
-- **YOLO Object Detection**: Automatically detects and extracts tables, pictures, and text regions
-- **Semantic Chunking**: Uses embeddings to create semantically coherent text chunks
-- **Hierarchical Retrieval**: Parent-child document structure for context-aware search
-- **Intelligent Query Orchestration**: LLM-based classification with smart skip logic and confidence fallback
-- **LLM Reranking**: Improves retrieval quality using LLM-based relevance scoring
-- **Multi-Provider Support**: Ollama (local), Gemini, OpenAI, Anthropic
+- **Multi-Format Support**: PDF, PPTX, DOCX, XLSX, HTML, Markdown, images
+- **Flexible Providers**: Mix and match LLM and embedding providers independently
+- **YOLO Object Detection**: Automatically detects tables, pictures, text regions (optional)
+- **Semantic Chunking**: Embedding-based coherent text chunks
+- **Intelligent Query Routing**: LLM-based classification with smart skip logic
 - **Clickable PDF References**: Response references link directly to source PDFs
-- **Cost Estimation**: Shows time and API cost estimates before processing
-- **No LangChain/LlamaIndex**: Direct Qdrant and Ollama integration for fine-grained control
-
-## Requirements
-
-- Python 3.12+
-- [Ollama](https://ollama.ai/) running locally
-- [LibreOffice](https://www.libreoffice.org/) for Office document conversion (pptx, docx, xlsx)
-- Required Ollama models:
-
-```bash
-ollama pull granite3.3:8b          # LLM for generation and reranking
-ollama pull qwen3-vl:8b-instruct   # Vision model for image descriptions
-ollama pull qwen3-embedding:0.6b   # Embedding model
-ollama pull ibm/granite-docling:258m-bf16  # Document parsing
-```
+- **No LangChain/LlamaIndex**: Direct Qdrant and provider integration
 
 ## Installation
 
 ```bash
-# Clone the repository
+# Basic installation (from GitHub)
+pip install git+https://github.com/arielibaba/cognidoc.git
+
+# With Gradio UI
+pip install "cognidoc[ui] @ git+https://github.com/arielibaba/cognidoc.git"
+
+# With YOLO detection
+pip install "cognidoc[yolo] @ git+https://github.com/arielibaba/cognidoc.git"
+
+# With local Ollama support
+pip install "cognidoc[ollama] @ git+https://github.com/arielibaba/cognidoc.git"
+
+# Full installation (all features)
+pip install "cognidoc[all] @ git+https://github.com/arielibaba/cognidoc.git"
+```
+
+### Development Installation
+
+```bash
 git clone https://github.com/arielibaba/cognidoc.git
 cd cognidoc
-
-# Install dependencies (requires uv package manager)
-make install
-
-# Or using pip
-pip install -e .
+make install  # Uses uv package manager
+# or
+pip install -e ".[all,dev]"
 ```
 
 ## Quick Start
 
-### Option A: Interactive Setup Wizard (Recommended)
+### Python API
 
-The setup wizard guides you through configuration, model installation, and document processing:
+```python
+from cognidoc import CogniDoc
+
+# Simple usage (Gemini LLM + Ollama embeddings)
+doc = CogniDoc()
+doc.ingest("./documents/")
+result = doc.query("What is the main topic?")
+print(result.answer)
+
+# Full cloud mode (no local dependencies)
+doc = CogniDoc(
+    llm_provider="openai",
+    embedding_provider="openai",
+)
+
+# Hybrid mode (mix providers)
+doc = CogniDoc(
+    llm_provider="gemini",
+    embedding_provider="ollama",
+    use_yolo=False,  # Skip YOLO, use simple extraction
+)
+
+# Launch web interface
+doc.launch_ui(port=7860, share=True)
+```
+
+### CLI
+
+```bash
+# Initialize project (copy schema/prompts templates)
+cognidoc init --schema --prompts
+
+# Ingest documents
+cognidoc ingest ./documents --llm gemini --embedding ollama
+
+# Cloud-only mode
+cognidoc ingest ./documents --llm openai --embedding openai
+
+# Without YOLO (simpler extraction)
+cognidoc ingest ./documents --no-yolo
+
+# Query
+cognidoc query "Summarize the key findings"
+
+# Launch web UI
+cognidoc serve --port 7860 --share
+```
+
+### Interactive Setup Wizard
+
+For guided configuration:
 
 ```bash
 python -m src.setup
 ```
 
+## Provider Configuration
+
+CogniDoc supports flexible provider mixing - use different providers for LLM and embeddings:
+
+| Provider | LLM | Embeddings | Requires |
+|----------|-----|------------|----------|
+| **Gemini** | `gemini-2.0-flash` | `text-embedding-004` | `GEMINI_API_KEY` |
+| **OpenAI** | `gpt-4o-mini` | `text-embedding-3-small` | `OPENAI_API_KEY` |
+| **Anthropic** | `claude-3-haiku` | - | `ANTHROPIC_API_KEY` |
+| **Ollama** | `granite3.3:8b` | `qwen3-embedding:0.6b` | Local Ollama server |
+
+### Example Configurations
+
+```python
+# Full local (free, requires Ollama)
+CogniDoc(llm_provider="ollama", embedding_provider="ollama")
+
+# Full cloud (no local deps, API costs)
+CogniDoc(llm_provider="gemini", embedding_provider="openai")
+
+# Hybrid (best of both)
+CogniDoc(llm_provider="gemini", embedding_provider="ollama")
 ```
-╭─────────────────────────────────────────────────────────╮
-│             🧠 CogniDoc Setup Wizard                    │
-╰─────────────────────────────────────────────────────────╯
-
-[1/4] Configuration LLM
-───────────────────────
-? Quel provider pour la génération ?
-  › Ollama (local, gratuit)
-    Gemini (Google)
-    OpenAI
-    Anthropic
-
-[2/4] Configuration Embeddings
-──────────────────────────────
-? Provider pour les embeddings ?
-  › Ollama - qwen3-embedding:0.6b (recommandé, gratuit)
-
-[3/4] Vérification des modèles Ollama
-─────────────────────────────────────
-┌──────────────────────────────┬─────────────────┬───────────────┐
-│ Modèle                       │ Usage           │ Status        │
-├──────────────────────────────┼─────────────────┼───────────────┤
-│ granite3.3:8b                │ LLM génération  │ ✓ Disponible  │
-│ qwen3-embedding:0.6b         │ Embeddings      │ ✓ Disponible  │
-│ ibm/granite-docling:258m-bf16│ Document parsing│ ✗ Manquant    │
-└──────────────────────────────┴─────────────────┴───────────────┘
-? Télécharger les modèles manquants ? [Y/n]
-
-[4/4] Configuration sauvegardée ✓
-
-╭─────────────────────────────────────────────────────────╮
-│             📄 Traitement de documents                  │
-╰─────────────────────────────────────────────────────────╯
-
-Documents détectés: 3 fichiers (4.2 MB)
-Estimation: ~18 minutes | Coût API: ~$0.45
-
-? Traiter ces documents ? [Y/n]
-
-╭─────────────────────────────────────────────────────────╮
-│                    Que faire ensuite ?                  │
-╰─────────────────────────────────────────────────────────╯
-  › 🚀 Lancer CogniDoc (interface web)
-    📄 Ajouter d'autres documents
-    🔄 Relancer le traitement
-    ❌ Quitter
-```
-
-The wizard will:
-1. **Configure LLM** - Choose provider and validate API keys
-2. **Configure Embeddings** - Select embedding model (Ollama recommended)
-3. **Verify Models** - Check and download required Ollama models
-4. **Process Documents** - Show estimates, run pipeline with progress
-5. **Launch Interface** - Start CogniDoc or add more documents
-
-### Option B: Manual Setup
-
-#### 1. Prepare Your Data
-
-```bash
-mkdir -p data/pdfs
-# Copy your documents to data/pdfs/
-# Supports: PDF, PPTX, DOCX, XLSX, HTML, Markdown, images
-# Non-PDF files are automatically converted to PDF during ingestion
-```
-
-#### 2. Configure Environment
-
-```bash
-cp .env.example .env
-# Edit .env with your API keys and model preferences
-```
-
-#### 3. Run the Ingestion Pipeline
-
-```bash
-python -m src.run_ingestion_pipeline --vision-provider ollama
-```
-
-#### 4. Launch CogniDoc
-
-```bash
-python -m src.cognidoc_app
-```
-
-Access the chat interface at `http://localhost:7860`
 
 ## Architecture
 
-### System Overview
+### Ingestion Pipeline
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            INGESTION PIPELINE                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  PDFs ──► Images (600 DPI) ──► YOLO Detection ──► Content Extraction        │
-│                                     │                    │                  │
-│                              ┌──────┴──────┐      ┌──────┴──────┐          │
-│                              │   Tables    │      │    Text     │          │
-│                              │  Pictures   │      │   Regions   │          │
-│                              └──────┬──────┘      └──────┬──────┘          │
-│                                     │                    │                  │
-│                                     └────────┬───────────┘                  │
-│                                              ▼                              │
-│                                     Semantic Chunking                       │
-│                                     (Parent + Child)                        │
-│                                              │                              │
-│                    ┌─────────────────────────┼─────────────────────────┐    │
-│                    ▼                         ▼                         ▼    │
-│           Vector Embeddings          Entity Extraction         Table Summary│
-│                    │                         │                         │    │
-│                    ▼                         ▼                         │    │
-│           Qdrant Vector Store        Knowledge Graph ◄─────────────────┘    │
-│           (child_documents)          (NetworkX + Communities)               │
-│                    │                         │                              │
-└────────────────────┼─────────────────────────┼──────────────────────────────┘
-                     │                         │
-                     └────────────┬────────────┘
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            RETRIEVAL SYSTEM                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  User Query ──► Query Rewriting ──► Query Analysis ──► Query Routing        │
-│                                              │                              │
-│                              ┌───────────────┼───────────────┐              │
-│                              ▼               ▼               ▼              │
-│                       Vector Search    Graph Traversal   Community          │
-│                       (Similarity)     (Relationships)   (Global)           │
-│                              │               │               │              │
-│                              └───────────────┼───────────────┘              │
-│                                              ▼                              │
-│                                      Result Fusion                          │
-│                                    (Weighted Scoring)                       │
-│                                              │                              │
-│                                              ▼                              │
-│                                      LLM Reranking                          │
-│                                              │                              │
-│                                              ▼                              │
-│                                   Streaming Response                        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+Documents → PDF Conversion → Images (600 DPI) → YOLO Detection*
+                                                      ↓
+                                    Text/Table/Image Extraction
+                                                      ↓
+                                            Semantic Chunking
+                                       (Parent + Child hierarchy)
+                                                      ↓
+                        ┌─────────────────────────────┴─────────────────────────────┐
+                        ↓                                                           ↓
+               Vector Embeddings                                        Entity/Relationship
+               (Qdrant + BM25)                                              Extraction
+                        ↓                                                           ↓
+                        └─────────────────────────────┬─────────────────────────────┘
+                                                      ↓
+                                            Hybrid Retriever
 ```
 
-### Core Components
+*YOLO is optional - falls back to simple page-level extraction if not installed.
 
-#### Ingestion Pipeline (`src/run_ingestion_pipeline.py`)
+### Query Routing
 
-Orchestrates the 11-stage document processing pipeline:
+| Query Type | Example | Vector | Graph |
+|------------|---------|--------|-------|
+| **FACTUAL** | "What is X?" | 70% | 30% |
+| **RELATIONAL** | "Relationship between A and B?" | 20% | 80% |
+| **EXPLORATORY** | "List all main topics" | 0% | 100% |
+| **PROCEDURAL** | "How to configure?" | 80% | 20% |
 
-| Stage | Module | Description |
-|-------|--------|-------------|
-| 1. Document Conversion | `convert_to_pdf.py` | Converts Office docs, HTML, images to PDF |
-| 2. PDF Conversion | `convert_pdf_to_image.py` | Converts PDFs to 600 DPI images |
-| 3. Object Detection | `extract_objects_from_image.py` | YOLOv11 detects text, tables, pictures |
-| 4. Text Extraction | `parse_image_with_text.py` | Granite-DocLing extracts document text |
-| 5. Table Extraction | `parse_image_with_table.py` | Converts tables to markdown format |
-| 6. Image Description | `create_image_description.py` | Vision LLM describes images (async) |
-| 7. Text Chunking | `chunk_text_data.py` | Semantic chunking with breakpoint detection |
-| 8. Table Chunking | `chunk_table_data.py` | Chunks and summarizes tables |
-| 9. Embeddings | `create_embeddings.py` | Generates vectors with SHA256 caching |
-| 10. Indexing | `build_indexes.py` | Builds Qdrant vector + keyword indexes |
-| 11. GraphRAG | `extract_entities.py` + `knowledge_graph.py` | Extracts entities, builds graph |
+## Configuration
 
-#### Semantic Chunker (`src/chunk_text_data.py`)
+### Environment Variables
 
-Custom implementation (no LangChain) that creates semantically coherent chunks:
+```bash
+# Provider selection
+COGNIDOC_LLM_PROVIDER=gemini
+COGNIDOC_EMBEDDING_PROVIDER=ollama
+COGNIDOC_DATA_DIR=./data
 
-1. **Sentence splitting**: Regex-based segmentation
-2. **Grouping**: Overlapping windows with buffer context (5 sentences)
-3. **Embedding**: Vector for each sentence group
-4. **Breakpoint detection**: Cosine similarity drops below 95th percentile indicate topic boundaries
-5. **Output**: Parent chunks (full context) + Child chunks (for vector search)
+# API Keys
+GEMINI_API_KEY=your-key
+OPENAI_API_KEY=your-key
+ANTHROPIC_API_KEY=your-key
 
-#### Knowledge Graph (`src/knowledge_graph.py`)
-
-NetworkX-based graph with:
-
-- **Entity deduplication**: Case-insensitive merging with description updates
-- **Community detection**: Louvain algorithm for topic clustering
-- **Community summaries**: LLM-generated 2-3 sentence descriptions
-- **Multi-hop traversal**: Configurable depth (default: 3 hops)
-- **Path finding**: Discovers connections between entities
-
-#### Query Orchestrator (`src/query_orchestrator.py`)
-
-Intelligent routing layer that decides how to use Vector and Graph retrieval:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                            QUERY                                     │
-└─────────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    QueryOrchestrator.route()                         │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  LLM Classification (with rule-based fallback)               │    │
-│  │  • Analyzes query intent and structure                       │    │
-│  │  • Extracts mentioned entities                               │    │
-│  │  • Determines optimal retrieval strategy                     │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
-                                │
-              ┌─────────────────┼─────────────────┐
-              │ skip_vector?    │    skip_graph?  │
-              ▼                 │                 ▼
-┌──────────────────────┐       │     ┌──────────────────────┐
-│   VECTOR SEARCH      │       │     │     GRAPH RAG        │
-│  (if not skipped)    │       │     │   (if not skipped)   │
-└──────────────────────┘       │     └──────────────────────┘
-              │                │                 │
-              └────────────────┼─────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Confidence-based Fallback                         │
-│  If one system returns low confidence → boost the other             │
-└─────────────────────────────────────────────────────────────────────┘
+# Ollama (if using local)
+OLLAMA_HOST=http://localhost:11434
 ```
 
-**Query Types and Routing:**
+### GraphRAG Schema
 
-| Query Type | Example | Vector | Graph | Mode |
-|------------|---------|--------|-------|------|
-| **FACTUAL** | "What is X?" | 70% | 30% | hybrid |
-| **RELATIONAL** | "Relationship between A and B?" | 20% | 80% | hybrid |
-| **COMPARATIVE** | "Compare X vs Y" | 30% | 70% | hybrid |
-| **EXPLORATORY** | "List all main topics" | 0% | 100% | graph_only (skip vector) |
-| **PROCEDURAL** | "How to configure?" | 80% | 20% | hybrid |
-| **ANALYTICAL** | "Analyze the impact of..." | 50% | 50% | hybrid |
+Customize entity extraction in `config/graph_schema.yaml`:
 
-**Smart Features:**
-- **Skip Logic**: Skips expensive retrievers when weight < 15%
-- **LLM Classification**: Uses LLM to understand query intent (with rule-based fallback)
-- **Confidence Fallback**: Boosts one system if the other returns low confidence
-- **Entity Detection**: Extracts entities from query for better graph retrieval
+```yaml
+domain:
+  name: "your-domain"
+  description: "Domain context for LLM extraction"
 
-#### Hybrid Retriever (`src/hybrid_retriever.py`)
+entity_types:
+  - name: "Concept"
+    description: "Abstract ideas"
+    examples: ["machine learning", "ethics"]
 
-Combines vector and graph retrieval with the Query Orchestrator:
+relationship_types:
+  - name: "RELATED_TO"
+    description: "General relationship"
+```
 
-- **BM25 + Dense Hybrid Search**: Combines keyword (BM25) and semantic (dense) search
-- **Cross-Encoder Reranking**: LLM-based relevance scoring for better precision
-- **Lost-in-the-Middle Reordering**: Places best results at start/end for LLM attention
-- **Contextual Compression**: Extracts query-relevant content to reduce tokens
-- **Metadata Filtering**: Filter results by document attributes
+### Prompts
 
-#### Graph Retriever (`src/graph_retrieval.py`)
+All LLM prompts are in `prompts/` directory and can be customized.
 
-Three retrieval strategies:
+## Requirements
 
-1. **Entity-based**: Extract mentions → get neighbors → collect relationships
-2. **Relationship-based**: Pattern matching → path finding → specific relationships
-3. **Community-based**: Embedding similarity to community summaries (for global queries)
+### Minimal (Cloud-only)
 
-### Utilities (`src/utils/`)
+- Python 3.10+
+- API key for at least one provider (Gemini, OpenAI, or Anthropic)
 
-| Module | Purpose |
-|--------|---------|
-| `rag_utils.py` | Document, VectorIndex, KeywordIndex, reranking functions |
-| `llm_providers.py` | Multi-provider abstraction (Ollama, Gemini, OpenAI, Anthropic) |
-| `embedding_cache.py` | SHA256-based SQLite cache for embeddings |
-| `logger.py` | Structured logging with pipeline timing metrics |
+### Full Features
 
-### Configuration (`src/constants.py`)
+- [Ollama](https://ollama.ai/) for local inference (optional)
+- [LibreOffice](https://www.libreoffice.org/) for Office document conversion
+- YOLO model for advanced document detection (optional)
 
-Central configuration hub with environment variable overrides:
+### Ollama Models (if using local)
 
-| Category | Settings |
-|----------|----------|
-| **Paths** | PDF_DIR, NON_PDF_DIR, IMAGE_DIR, DETECTION_DIR, PROCESSED_DIR, CHUNKS_DIR, EMBEDDINGS_DIR, INDEX_DIR |
-| **YOLO** | Confidence: 0.2, IOU: 0.8 |
-| **Chunking** | Max size: 512 tokens, Buffer: 5 sentences, Breakpoint: 95th percentile |
-| **Retrieval** | Top-K children: 10, Top-K reranked: 5, Top-K refs: 3 |
-| **Models** | Configurable per provider (Ollama, Gemini, OpenAI, Anthropic) |
+```bash
+ollama pull granite3.3:8b          # LLM
+ollama pull qwen3-embedding:0.6b   # Embeddings
+ollama pull qwen3-vl:8b-instruct   # Vision (optional)
+```
 
 ## Project Structure
 
 ```
 cognidoc/
+├── src/cognidoc/           # Main package
+│   ├── api.py              # CogniDoc class
+│   ├── cli.py              # Command-line interface
+│   ├── app.py              # Gradio interface
+│   ├── pipeline/           # Ingestion pipeline
+│   ├── retrieval/          # Hybrid retriever
+│   └── providers/          # LLM/Embedding providers
 ├── config/
-│   └── graph_schema.yaml          # GraphRAG entity/relationship configuration
-├── data/
-│   ├── pdfs/                      # Input: PDF files (and converted docs)
-│   ├── non_pdfs/                  # Archive: Original non-PDF files after conversion
-│   ├── images/                    # Stage 2: Page images (600 DPI)
-│   ├── detections/                # Stage 3: YOLO detection crops
-│   ├── processed/                 # Stage 4-6: Extracted text/tables/descriptions
-│   ├── chunks/                    # Stage 7-8: Parent + child chunks
-│   ├── embeddings/                # Stage 9: Embedding vectors (JSON)
-│   ├── indexes/                   # Stage 10-11: Vector/keyword/graph indexes
-│   │   ├── child_documents/       # Vector index metadata
-│   │   ├── parent_documents/      # Keyword index metadata
-│   │   └── knowledge_graph/       # Graph persistence (gpickle + JSON)
-│   ├── vector_store/              # Qdrant database files
-│   └── cache/                     # Embedding cache (SQLite)
-├── models/
-│   └── YOLOv11/                   # YOLO model weights
-├── src/
-│   ├── setup.py                   # Interactive setup wizard
-│   ├── run_ingestion_pipeline.py  # Main pipeline orchestrator
-│   ├── cognidoc_app.py            # Gradio chat interface
-│   ├── convert_to_pdf.py          # Multi-format document to PDF conversion
-│   ├── hybrid_retriever.py        # Vector + Graph fusion
-│   ├── knowledge_graph.py         # NetworkX graph with communities
-│   ├── extract_entities.py        # LLM entity/relationship extraction
-│   ├── graph_retrieval.py         # Graph query strategies
-│   ├── graph_config.py            # YAML config loader
-│   ├── constants.py               # All configuration constants
-│   ├── helpers.py                 # Query rewriting, reranking utilities
-│   ├── prompts/                   # LLM prompt templates (markdown)
-│   └── utils/                     # RAG utilities, logging, caching
-├── .env.example                   # Environment configuration template
-└── experiments/                   # Jupyter notebooks
-```
-
-## Pipeline Options
-
-```bash
-python -m src.run_ingestion_pipeline [OPTIONS]
-
-# Skip stages
---skip-conversion     # Skip non-PDF to PDF conversion
---skip-pdf            # Skip PDF to image conversion
---skip-yolo           # Skip YOLO detection
---skip-extraction     # Skip text/table extraction
---skip-descriptions   # Skip image descriptions
---skip-chunking       # Skip semantic chunking
---skip-embeddings     # Skip embedding generation
---skip-indexing       # Skip vector index building
---skip-graph          # Skip knowledge graph building
-
-# Configuration
---vision-provider     # ollama, gemini, openai, anthropic
---graph-config        # Path to custom graph schema
---force-reembed       # Re-embed all (ignore cache)
---no-cache            # Disable embedding cache
-```
-
-## CogniDoc App Options
-
-```bash
-python -m src.cognidoc_app [OPTIONS]
-
---no-rerank           # Disable LLM reranking (faster)
---port PORT           # Server port (default: 7860)
---share               # Create public shareable link
-```
-
-## GraphRAG Configuration
-
-Edit `config/graph_schema.yaml` to customize extraction:
-
-```yaml
-domain:
-  name: "your-domain"
-  description: "Domain description guides LLM extraction"
-
-entity_types:
-  - name: "Concept"
-    description: "Abstract ideas and principles"
-    examples: ["machine learning", "data processing"]
-    attributes: ["definition", "category"]
-
-  - name: "Tool"
-    description: "Software and technologies"
-    examples: ["Python", "PostgreSQL"]
-
-relationship_types:
-  - name: "USES"
-    description: "One entity uses another"
-    source_types: ["Process", "Tool"]
-    target_types: ["Tool", "Concept"]
-
-extraction:
-  confidence_threshold: 0.7
-  max_entities_per_chunk: 15
-  max_relationships_per_chunk: 20
-
-graph_settings:
-  entity_merge_threshold: 0.85
-  community_resolution: 1.0
-  max_traversal_depth: 3
-
-routing:
-  strategy: "hybrid"    # hybrid, classifier, vector_only
-  vector_weight: 0.5
-  graph_weight: 0.5
-```
-
-## Environment Variables
-
-Create a `.env` file to override defaults:
-
-```bash
-# LLM Providers
-DEFAULT_LLM_PROVIDER=gemini          # gemini, ollama, openai, anthropic
-DEFAULT_VISION_PROVIDER=gemini
-
-# Ollama
-OLLAMA_HOST=http://localhost:11434
-OLLAMA_LLM_MODEL=granite3.3:8b
-OLLAMA_VISION_MODEL=qwen3-vl:8b-instruct
-OLLAMA_EMBED_MODEL=qwen3-embedding:0.6b
-
-# Generation
-LLM_TEMPERATURE=0.7
-CONTEXT_WINDOW=128000
-
-# Retrieval
-TOP_K_RETRIEVED_CHILDREN=10
-TOP_K_RERANKED_PARENTS=5
-ENABLE_RERANKING=true
+│   └── graph_schema.yaml   # GraphRAG configuration
+├── prompts/                # Customizable prompts
+└── data/                   # Document storage
+    ├── pdfs/               # Input documents
+    ├── indexes/            # Vector/graph indexes
+    └── vector_store/       # Qdrant database
 ```
 
 ## Development
 
 ```bash
-make format    # Format code with black
+make format    # Format with black
 make lint      # Run pylint
 make refactor  # Format + lint
+make test      # Run tests
 ```
 
 ## Dependencies
@@ -489,18 +259,10 @@ make refactor  # Format + lint
 | Package | Purpose |
 |---------|---------|
 | `qdrant-client` | Vector database |
-| `ollama` | Local LLM inference |
-| `ultralytics` | YOLO object detection |
-| `pdf2image` | PDF conversion |
-| `weasyprint` | HTML/Markdown to PDF |
-| `reportlab` | Text to PDF |
-| `Pillow` | Image processing and conversion |
-| `gradio` | Web interface |
-| `tiktoken` | Token counting |
 | `networkx` | Knowledge graph |
-| `rich` | Beautiful terminal UI |
-| `questionary` | Interactive prompts |
-| `pyyaml` | Configuration parsing |
+| `gradio` | Web interface (optional) |
+| `ultralytics` | YOLO detection (optional) |
+| `ollama` | Local inference (optional) |
 | `google-generativeai` | Gemini API |
 | `openai` | OpenAI API |
 | `anthropic` | Claude API |
