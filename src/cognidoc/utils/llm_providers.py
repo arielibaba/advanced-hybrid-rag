@@ -230,8 +230,16 @@ class GeminiProvider(BaseLLMProvider):
 
     def vision(self, image_path: str, prompt: str, system_prompt: Optional[str] = None) -> str:
         with timer(f"Gemini vision ({self.config.model})"):
-            from PIL import Image
-            img = Image.open(image_path)
+            import mimetypes
+
+            # Read image as bytes
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+
+            # Determine mime type
+            mime_type, _ = mimetypes.guess_type(image_path)
+            if mime_type is None:
+                mime_type = "image/jpeg"
 
             config_kwargs = {
                 "temperature": self.config.temperature,
@@ -242,13 +250,13 @@ class GeminiProvider(BaseLLMProvider):
 
             generation_config = self.types.GenerateContentConfig(**config_kwargs)
 
-            # Create content with image and prompt
+            # Create content with image bytes and prompt (new SDK format)
             contents = [
                 self.types.Content(
                     role="user",
                     parts=[
                         self.types.Part.from_text(text=prompt),
-                        self.types.Part.from_image(image=img),
+                        self.types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                     ]
                 )
             ]
