@@ -54,11 +54,14 @@ ui = [
 ]
 
 # YOLO detection (optional - falls back to simple extraction)
+# Note: torch and torchvision versions must be compatible
+# See: https://pytorch.org/get-started/previous-versions/
 yolo = [
     "ultralytics>=8.0",
     "pillow>=10.0",
     "opencv-python>=4.8",
-    "torch>=2.0",
+    "torch>=2.4.0,<2.6.0",
+    "torchvision>=0.19.0,<0.21.0",
 ]
 
 # Local Ollama inference (optional - cloud providers work without it)

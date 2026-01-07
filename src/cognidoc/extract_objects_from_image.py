@@ -59,15 +59,9 @@ def is_yolo_model_available(model_path: str = None) -> bool:
         return False
 
     if model_path is None:
-        # Check default locations
-        default_paths = [
-            Path("models/YOLOv11/document_yolo_model.pt"),
-            Path(__file__).parent.parent.parent / "models" / "YOLOv11" / "document_yolo_model.pt",
-        ]
-        for path in default_paths:
-            if path.exists():
-                return True
-        return False
+        # Use the configured model path from constants
+        from .constants import YOLO_MODEL_PATH
+        return Path(YOLO_MODEL_PATH).exists()
 
     return Path(model_path).exists()
 
