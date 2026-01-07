@@ -153,38 +153,36 @@ class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
 
 
 class GeminiEmbeddingProvider(BaseEmbeddingProvider):
-    """Google Gemini embedding provider."""
+    """Google Gemini embedding provider using the new google-genai SDK."""
 
     def __init__(self, config: EmbeddingConfig):
         super().__init__(config)
         try:
-            import google.generativeai as genai
+            from google import genai
 
-            api_key = config.api_key or os.getenv("GOOGLE_API_KEY")
+            api_key = config.api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
             if not api_key:
-                raise ValueError("GOOGLE_API_KEY not found in environment or config")
+                raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY not found in environment or config")
 
-            genai.configure(api_key=api_key)
-            self.genai = genai
+            self.client = genai.Client(api_key=api_key)
         except ImportError:
             raise ImportError(
-                "Google Generative AI package not installed. Install with: pip install cognidoc[gemini]"
+                "Google GenAI SDK not installed. Install with: pip install google-genai"
             )
 
     def embed_single(self, text: str) -> List[float]:
-        result = self.genai.embed_content(
-            model=f"models/{self.config.model}",
-            content=text,
-            task_type="retrieval_document",
+        result = self.client.models.embed_content(
+            model=self.config.model,
+            contents=text,
         )
-        return result["embedding"]
+        return result.embeddings[0].values
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         """Embed multiple texts."""
         if not texts:
             return []
 
-        # Gemini supports batch embedding
+        # Embed texts in batches
         all_embeddings = []
         for i in range(0, len(texts), self.config.batch_size):
             batch = texts[i:i + self.config.batch_size]
@@ -261,8 +259,8 @@ def is_provider_available(provider: EmbeddingProvider) -> bool:
 
     elif provider == EmbeddingProvider.GEMINI:
         try:
-            import google.generativeai
-            return bool(os.getenv("GOOGLE_API_KEY"))
+            from google import genai
+            return bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
         except ImportError:
             return False
 

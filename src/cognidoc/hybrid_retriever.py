@@ -322,7 +322,7 @@ class HybridRetriever:
             HybridRetrievalResult with combined context
         """
         if model is None:
-            model = LLM
+            model = OLLAMA_DEFAULT_MODEL
         if top_k is None:
             top_k = TOP_K_RETRIEVED_CHILDREN
 

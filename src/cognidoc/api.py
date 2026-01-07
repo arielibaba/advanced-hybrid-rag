@@ -7,6 +7,7 @@ Provides a simple interface for:
 - Launching the Gradio UI
 """
 
+import asyncio
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -216,46 +217,123 @@ class CogniDoc:
 
     def ingest(
         self,
-        source: Union[str, Path, List[str]],
+        source: Union[str, Path, List[str]] = None,
         skip_conversion: bool = False,
+        skip_pdf: bool = False,
         skip_yolo: bool = False,
+        skip_extraction: bool = False,
+        skip_descriptions: bool = False,
+        skip_chunking: bool = False,
+        skip_embeddings: bool = False,
+        skip_indexing: bool = False,
         skip_graph: bool = False,
+        force_reembed: bool = False,
+        use_cache: bool = True,
+        graph_config_path: Optional[str] = None,
     ) -> IngestionResult:
         """
         Ingest documents from path(s).
 
+        The pipeline processes documents in the data/pdfs directory by default.
+        If source is specified, files will be copied to data/pdfs first.
+
         Args:
-            source: Path to document(s) or directory
+            source: Path to document(s) or directory (optional, uses data/pdfs if None)
             skip_conversion: Skip non-PDF to PDF conversion
+            skip_pdf: Skip PDF to image conversion
             skip_yolo: Skip YOLO detection (use simple extraction)
+            skip_extraction: Skip text/table extraction
+            skip_descriptions: Skip image description generation
+            skip_chunking: Skip semantic chunking
+            skip_embeddings: Skip embedding generation
+            skip_indexing: Skip vector index building
             skip_graph: Skip GraphRAG processing
+            force_reembed: Force re-embedding even for cached content
+            use_cache: Use embedding cache
+            graph_config_path: Path to custom graph configuration
 
         Returns:
             IngestionResult with statistics
         """
-        from .run_ingestion_pipeline import run_pipeline
+        from .run_ingestion_pipeline import run_ingestion_pipeline_async
+        from .constants import SOURCES_DIR
+        import shutil
 
-        # Convert source to list of paths
-        if isinstance(source, (str, Path)):
-            source = [str(source)]
-        sources = [str(s) for s in source]
+        # Copy source files to SOURCES_DIR if provided
+        if source is not None:
+            if isinstance(source, (str, Path)):
+                source = [str(source)]
+            sources = [str(s) for s in source]
+
+            for src_path in sources:
+                src = Path(src_path)
+                if src.is_file():
+                    dest = Path(SOURCES_DIR) / src.name
+                    logger.info(f"Copying {src} to {dest}")
+                    shutil.copy2(src, dest)
+                elif src.is_dir():
+                    for file in src.iterdir():
+                        if file.is_file():
+                            dest = Path(SOURCES_DIR) / file.name
+                            logger.info(f"Copying {file} to {dest}")
+                            shutil.copy2(file, dest)
 
         # Determine YOLO usage
         use_yolo = self._get_use_yolo() and not skip_yolo
+        actual_skip_yolo = not use_yolo
 
-        logger.info(f"Starting ingestion of {len(sources)} source(s)")
-        logger.info(f"YOLO: {use_yolo}, Graph: {self.config.use_graph and not skip_graph}")
+        # Determine graph usage
+        actual_skip_graph = skip_graph or not self.config.use_graph
 
-        # Run pipeline
-        # TODO: Integrate with run_ingestion_pipeline properly
-        # For now, return a placeholder result
-        return IngestionResult(
-            documents_processed=0,
-            chunks_created=0,
-            entities_extracted=0,
-            relationships_extracted=0,
-            errors=["Full pipeline integration pending"],
-        )
+        logger.info(f"Starting ingestion pipeline")
+        logger.info(f"YOLO: {use_yolo}, Graph: {not actual_skip_graph}")
+
+        # Run async pipeline
+        try:
+            stats = asyncio.run(run_ingestion_pipeline_async(
+                vision_provider=self.config.vision_provider,
+                extraction_provider=self.config.llm_provider,
+                skip_conversion=skip_conversion,
+                skip_pdf=skip_pdf,
+                skip_yolo=actual_skip_yolo,
+                skip_extraction=skip_extraction,
+                skip_descriptions=skip_descriptions,
+                skip_chunking=skip_chunking,
+                skip_embeddings=skip_embeddings,
+                force_reembed=force_reembed,
+                use_cache=use_cache,
+                skip_indexing=skip_indexing,
+                skip_graph=actual_skip_graph,
+                graph_config_path=graph_config_path,
+            ))
+
+            # Extract stats from pipeline result
+            entities = stats.get("graph_extraction", {}).get("entities_extracted", 0)
+            relationships = stats.get("graph_extraction", {}).get("relationships_extracted", 0)
+            chunks = stats.get("graph_extraction", {}).get("chunks_processed", 0)
+            doc_stats = stats.get("document_conversion", {})
+            docs = (
+                doc_stats.get("pdfs_copied", 0) +
+                doc_stats.get("images_copied", 0) +
+                doc_stats.get("converted", 0)
+            )
+
+            return IngestionResult(
+                documents_processed=docs,
+                chunks_created=chunks,
+                entities_extracted=entities,
+                relationships_extracted=relationships,
+                errors=[],
+            )
+        except Exception as e:
+            logger.error(f"Ingestion pipeline failed: {e}")
+            return IngestionResult(
+                documents_processed=0,
+                chunks_created=0,
+                entities_extracted=0,
+                relationships_extracted=0,
+                errors=[str(e)],
+            )
 
     def query(
         self,

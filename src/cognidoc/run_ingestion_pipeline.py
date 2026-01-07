@@ -26,8 +26,8 @@ import argparse
 from pathlib import Path
 
 from .constants import (
+    SOURCES_DIR,
     PDF_DIR,
-    NON_PDF_DIR,
     IMAGE_DIR,
     DETECTION_DIR,
     YOLO_MODEL_PATH,
@@ -54,7 +54,7 @@ from .constants import (
 
 from .utils.logger import logger, PipelineTimer
 from .helpers import clear_pytorch_cache, load_prompt
-from .convert_to_pdf import convert_non_pdfs_to_pdf
+from .convert_to_pdf import process_source_documents
 from .convert_pdf_to_image import convert_pdf_to_image
 from .extract_objects_from_image import extract_objects_from_image
 from .parse_image_with_text import parse_image_with_text
@@ -214,28 +214,30 @@ async def run_ingestion_pipeline_async(
     pipeline_timer.stage("clear_cache")
     clear_pytorch_cache()
 
-    # 2. Convert non-PDF documents to PDF
+    # 2. Process source documents (copy PDFs, copy images, convert documents)
     if not skip_conversion:
         pipeline_timer.stage("document_conversion")
         try:
-            logger.info("Converting non-PDF documents to PDF...")
-            conversion_stats = convert_non_pdfs_to_pdf(
-                input_dir=PDF_DIR,
+            logger.info("Processing source documents...")
+            conversion_stats = process_source_documents(
+                sources_dir=SOURCES_DIR,
                 pdf_output_dir=PDF_DIR,
-                non_pdf_archive_dir=NON_PDF_DIR,
+                image_output_dir=IMAGE_DIR,  # Images go directly to images folder
             )
             stats["document_conversion"] = conversion_stats
             logger.info(
-                f"Document conversion completed: {conversion_stats['converted']} converted, "
+                f"Document processing completed: {conversion_stats['pdfs_copied']} PDFs copied, "
+                f"{conversion_stats['images_copied']} images copied, "
+                f"{conversion_stats['converted']} converted, "
                 f"{conversion_stats['skipped_existing']} skipped, "
                 f"{conversion_stats['failed']} failed"
             )
         except Exception as e:
-            logger.error(f"Document conversion failed: {e}")
-            # Continue with pipeline - non-PDF conversion failure shouldn't stop PDF processing
-            logger.warning("Continuing pipeline without non-PDF conversion")
+            logger.error(f"Document processing failed: {e}")
+            # Continue with pipeline - conversion failure shouldn't stop PDF processing
+            logger.warning("Continuing pipeline without source document processing")
     else:
-        logger.info("Skipping non-PDF to PDF conversion")
+        logger.info("Skipping source document processing")
 
     # 3. Convert PDFs to images
     if not skip_pdf:

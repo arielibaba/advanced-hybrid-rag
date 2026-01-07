@@ -1,11 +1,12 @@
 """
-Convert non-PDF documents to PDF format.
+Process source documents for the ingestion pipeline.
 
 Supports multiple document formats:
-- Office: ppt, pptx, doc, docx, xls, xlsx, odt, odp, ods, rtf
-- Web: html, htm
-- Text: txt, md (Markdown)
-- Images: jpg, jpeg, png, tiff, bmp
+- Office: ppt, pptx, doc, docx, xls, xlsx, odt, odp, ods, rtf → converted to PDF
+- Web: html, htm → converted to PDF
+- Text: txt, md (Markdown) → converted to PDF
+- Images: jpg, jpeg, png, tiff, bmp → copied directly to images folder (no PDF conversion)
+- PDF: copied directly to pdfs folder
 
 Uses LibreOffice for Office documents (cross-platform) and Python libraries for others.
 """
@@ -26,10 +27,13 @@ TEXT_EXTENSIONS = {'.txt'}
 MARKDOWN_EXTENSIONS = {'.md', '.markdown'}
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp'}
 
-ALL_SUPPORTED_EXTENSIONS = (
-    OFFICE_EXTENSIONS | HTML_EXTENSIONS | TEXT_EXTENSIONS |
-    MARKDOWN_EXTENSIONS | IMAGE_EXTENSIONS
+# Extensions that need PDF conversion (documents)
+PDF_CONVERTIBLE_EXTENSIONS = (
+    OFFICE_EXTENSIONS | HTML_EXTENSIONS | TEXT_EXTENSIONS | MARKDOWN_EXTENSIONS
 )
+
+# All supported extensions
+ALL_SUPPORTED_EXTENSIONS = PDF_CONVERTIBLE_EXTENSIONS | IMAGE_EXTENSIONS
 
 
 def find_libreoffice() -> Optional[str]:
@@ -374,35 +378,39 @@ def convert_document_to_pdf(
         return None
 
 
-def convert_non_pdfs_to_pdf(
-    input_dir: str,
+def process_source_documents(
+    sources_dir: str,
     pdf_output_dir: str,
-    non_pdf_archive_dir: str,
+    image_output_dir: str = None,
 ) -> Dict[str, any]:
     """
-    Convert all non-PDF documents in a directory (and subdirectories) to PDF format.
+    Process all documents from sources directory.
 
     This function:
-    1. Scans input_dir recursively for non-PDF documents
-    2. Converts them to PDF and saves in the same relative location under pdf_output_dir
-    3. Moves original files to the same relative location under non_pdf_archive_dir
-    4. Skips conversion if PDF with same name already exists
+    1. Scans sources_dir recursively for all documents
+    2. Copies PDFs directly to pdf_output_dir
+    3. Copies images directly to image_output_dir (skips PDF conversion for efficiency)
+    4. Converts documents (Office, HTML, text) to PDF and saves in pdf_output_dir
+    5. Keeps original files in sources_dir (archive)
+    6. Skips processing if output file already exists
 
     Args:
-        input_dir: Directory containing documents to convert
-        pdf_output_dir: Directory to save converted PDFs
-        non_pdf_archive_dir: Directory to move original non-PDF files
+        sources_dir: Directory containing source documents (input)
+        pdf_output_dir: Directory to save PDFs (output)
+        image_output_dir: Directory to save images directly (optional, uses pdf_output_dir if None)
 
     Returns:
-        Statistics dictionary with conversion results
+        Statistics dictionary with processing results
     """
-    input_path = Path(input_dir)
+    sources_path = Path(sources_dir)
     pdf_output_path = Path(pdf_output_dir)
-    archive_path = Path(non_pdf_archive_dir)
+    image_output_path = Path(image_output_dir) if image_output_dir else None
 
     # Create directories if they don't exist
+    sources_path.mkdir(parents=True, exist_ok=True)
     pdf_output_path.mkdir(parents=True, exist_ok=True)
-    archive_path.mkdir(parents=True, exist_ok=True)
+    if image_output_path:
+        image_output_path.mkdir(parents=True, exist_ok=True)
 
     # Find LibreOffice
     libreoffice_path = find_libreoffice()
@@ -417,18 +425,19 @@ def convert_non_pdfs_to_pdf(
     # Statistics
     stats = {
         "total_files": 0,
+        "pdfs_copied": 0,
+        "images_copied": 0,
         "converted": 0,
         "skipped_existing": 0,
-        "skipped_pdf": 0,
+        "unsupported": 0,
         "failed": 0,
-        "moved_to_archive": 0,
         "by_format": {},
         "errors": [],
     }
 
     # Scan for files recursively
-    all_files = list(input_path.rglob("*"))
-    logger.info(f"Scanning {input_path} recursively, found {len(all_files)} items")
+    all_files = list(sources_path.rglob("*"))
+    logger.info(f"Scanning {sources_path} recursively, found {len(all_files)} items")
 
     for file_path in all_files:
         if not file_path.is_file():
@@ -437,71 +446,95 @@ def convert_non_pdfs_to_pdf(
         ext = file_path.suffix.lower()
         stats["total_files"] += 1
 
-        # Skip PDFs - they're already in the right format
-        if ext == '.pdf':
-            stats["skipped_pdf"] += 1
-            continue
-
-        # Check if format is supported
-        if ext not in ALL_SUPPORTED_EXTENSIONS:
-            logger.debug(f"Skipping unsupported format: {file_path.name}")
-            continue
-
         # Track format statistics
         if ext not in stats["by_format"]:
-            stats["by_format"][ext] = {"converted": 0, "failed": 0, "skipped": 0}
+            stats["by_format"][ext] = {"processed": 0, "failed": 0, "skipped": 0}
 
         # Calculate relative path to preserve directory structure
         try:
-            relative_path = file_path.relative_to(input_path)
+            relative_path = file_path.relative_to(sources_path)
             relative_dir = relative_path.parent
         except ValueError:
             relative_dir = Path("")
 
-        # Create output directory preserving structure
+        # Handle PDFs - copy directly to pdf_output_dir
+        if ext == '.pdf':
+            target_output_dir = pdf_output_path / relative_dir
+            target_output_dir.mkdir(parents=True, exist_ok=True)
+            target_pdf = target_output_dir / file_path.name
+            if target_pdf.exists():
+                logger.debug(f"PDF already exists in output, skipping: {file_path.name}")
+                stats["skipped_existing"] += 1
+                stats["by_format"][ext]["skipped"] += 1
+            else:
+                shutil.copy2(str(file_path), str(target_pdf))
+                stats["pdfs_copied"] += 1
+                stats["by_format"][ext]["processed"] += 1
+                logger.info(f"Copied PDF: {file_path.name}")
+            continue
+
+        # Handle images - copy directly to image_output_dir (skip PDF conversion)
+        if ext in IMAGE_EXTENSIONS:
+            if image_output_path:
+                # Copy image directly to images folder (optimization: skip PDF roundtrip)
+                # Use a naming convention compatible with the pipeline: filename_page_1.ext
+                target_image = image_output_path / f"{file_path.stem}_page_1{ext}"
+                if target_image.exists():
+                    logger.debug(f"Image already exists in output, skipping: {file_path.name}")
+                    stats["skipped_existing"] += 1
+                    stats["by_format"][ext]["skipped"] += 1
+                else:
+                    shutil.copy2(str(file_path), str(target_image))
+                    stats["images_copied"] += 1
+                    stats["by_format"][ext]["processed"] += 1
+                    logger.info(f"Copied image directly: {file_path.name} -> {target_image.name}")
+            else:
+                # Fallback: convert to PDF if no image_output_dir specified
+                target_output_dir = pdf_output_path / relative_dir
+                target_output_dir.mkdir(parents=True, exist_ok=True)
+                target_pdf = target_output_dir / f"{file_path.stem}.pdf"
+                if target_pdf.exists():
+                    logger.debug(f"Converted PDF already exists, skipping: {file_path.name}")
+                    stats["skipped_existing"] += 1
+                    stats["by_format"][ext]["skipped"] += 1
+                else:
+                    result = convert_document_to_pdf(file_path, target_output_dir, libreoffice_path)
+                    if result:
+                        stats["converted"] += 1
+                        stats["by_format"][ext]["processed"] += 1
+                        logger.info(f"Converted image to PDF: {file_path.name}")
+                    else:
+                        stats["failed"] += 1
+                        stats["by_format"][ext]["failed"] += 1
+                        stats["errors"].append(f"Failed to convert: {file_path.name}")
+            continue
+
+        # Check if format is supported for PDF conversion
+        if ext not in PDF_CONVERTIBLE_EXTENSIONS:
+            logger.debug(f"Skipping unsupported format: {file_path.name}")
+            stats["unsupported"] += 1
+            continue
+
+        # Create output directory for PDF conversion
         target_output_dir = pdf_output_path / relative_dir
         target_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Check if PDF already exists
+        # Check if converted PDF already exists
         target_pdf = target_output_dir / f"{file_path.stem}.pdf"
         if target_pdf.exists():
-            logger.info(f"PDF already exists, skipping conversion: {file_path.name}")
+            logger.debug(f"Converted PDF already exists, skipping: {file_path.name}")
             stats["skipped_existing"] += 1
             stats["by_format"][ext]["skipped"] += 1
-
-            # Still move the original to archive (preserving structure)
-            archive_target_dir = archive_path / relative_dir
-            archive_target_dir.mkdir(parents=True, exist_ok=True)
-            archive_dest = archive_target_dir / file_path.name
-            if not archive_dest.exists():
-                shutil.move(str(file_path), str(archive_dest))
-                stats["moved_to_archive"] += 1
-                logger.info(f"Moved to archive: {file_path.name}")
             continue
 
-        # Convert the document
+        # Convert the document to PDF
         logger.info(f"Converting: {file_path}")
         result = convert_document_to_pdf(file_path, target_output_dir, libreoffice_path)
 
         if result:
             stats["converted"] += 1
-            stats["by_format"][ext]["converted"] += 1
+            stats["by_format"][ext]["processed"] += 1
             logger.info(f"Successfully converted: {file_path.name} -> {result.name}")
-
-            # Move original to archive (preserving structure)
-            archive_target_dir = archive_path / relative_dir
-            archive_target_dir.mkdir(parents=True, exist_ok=True)
-            archive_dest = archive_target_dir / file_path.name
-            if archive_dest.exists():
-                # Add suffix if file exists in archive
-                counter = 1
-                while archive_dest.exists():
-                    archive_dest = archive_target_dir / f"{file_path.stem}_{counter}{file_path.suffix}"
-                    counter += 1
-
-            shutil.move(str(file_path), str(archive_dest))
-            stats["moved_to_archive"] += 1
-            logger.info(f"Moved to archive: {file_path.name}")
         else:
             stats["failed"] += 1
             stats["by_format"][ext]["failed"] += 1
@@ -511,17 +544,36 @@ def convert_non_pdfs_to_pdf(
     # Log summary
     logger.info(f"""
     ============================================
-    Document Conversion Summary
+    Source Documents Processing Summary
     ============================================
     Total files scanned:    {stats['total_files']}
-    PDFs (skipped):         {stats['skipped_pdf']}
-    Already converted:      {stats['skipped_existing']}
-    Newly converted:        {stats['converted']}
+    PDFs copied:            {stats['pdfs_copied']}
+    Images copied:          {stats['images_copied']}
+    Documents converted:    {stats['converted']}
+    Already processed:      {stats['skipped_existing']}
+    Unsupported formats:    {stats['unsupported']}
     Failed conversions:     {stats['failed']}
-    Moved to archive:       {stats['moved_to_archive']}
 
     By format: {stats['by_format']}
     ============================================
     """)
 
     return stats
+
+
+# Alias for backward compatibility
+def convert_non_pdfs_to_pdf(
+    input_dir: str,
+    pdf_output_dir: str,
+    non_pdf_archive_dir: str = None,  # Deprecated, ignored
+) -> Dict[str, any]:
+    """
+    Deprecated: Use process_source_documents instead.
+
+    This function now just calls process_source_documents for backward compatibility.
+    The non_pdf_archive_dir parameter is ignored.
+    """
+    logger.warning(
+        "convert_non_pdfs_to_pdf is deprecated. Use process_source_documents instead."
+    )
+    return process_source_documents(input_dir, pdf_output_dir)

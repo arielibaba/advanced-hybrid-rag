@@ -120,36 +120,28 @@ class BaseLLMProvider(ABC):
 
 
 class GeminiProvider(BaseLLMProvider):
-    """Google Gemini provider."""
+    """Google Gemini provider using the new google-genai SDK."""
 
     def __init__(self, config: LLMConfig):
         super().__init__(config)
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
 
-        api_key = config.api_key or os.getenv("GOOGLE_API_KEY")
+        api_key = config.api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise ValueError("GOOGLE_API_KEY not found in environment or config")
+            raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY not found in environment or config")
 
-        genai.configure(api_key=api_key)
-        self.genai = genai
+        self.client = genai.Client(api_key=api_key)
+        self.types = types
 
-        generation_config = {
-            "temperature": config.temperature,
-            "top_p": config.top_p,
-        }
-        if config.max_tokens:
-            generation_config["max_output_tokens"] = config.max_tokens
-
-        self.model = genai.GenerativeModel(
-            model_name=config.model,
-            generation_config=generation_config,
-        )
-        self.vision_model = genai.GenerativeModel(
-            model_name=config.model,
-            generation_config=generation_config,
+        # Store generation config for later use
+        self.generation_config = types.GenerateContentConfig(
+            temperature=config.temperature,
+            top_p=config.top_p,
+            max_output_tokens=config.max_tokens if config.max_tokens else None,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> tuple[list, str | None]:
         """Convert messages to Gemini format."""
         gemini_messages = []
         system_instruction = None
@@ -159,10 +151,12 @@ class GeminiProvider(BaseLLMProvider):
                 system_instruction = msg.content
             else:
                 role = "user" if msg.role == "user" else "model"
-                gemini_messages.append({
-                    "role": role,
-                    "parts": [msg.content]
-                })
+                gemini_messages.append(
+                    self.types.Content(
+                        role=role,
+                        parts=[self.types.Part.from_text(text=msg.content)]
+                    )
+                )
 
         return gemini_messages, system_instruction
 
@@ -171,27 +165,32 @@ class GeminiProvider(BaseLLMProvider):
             gemini_messages, system_instruction = self._convert_messages(messages)
 
             # Build generation config
-            generation_config = {
+            config_kwargs = {
                 "temperature": self.config.temperature,
                 "top_p": self.config.top_p,
             }
+            if self.config.max_tokens:
+                config_kwargs["max_output_tokens"] = self.config.max_tokens
+            if system_instruction:
+                config_kwargs["system_instruction"] = system_instruction
 
-            # Enable JSON mode if requested (instance or call-level)
+            # Enable JSON mode if requested
             if json_mode or self.config.json_mode:
-                generation_config["response_mime_type"] = "application/json"
+                config_kwargs["response_mime_type"] = "application/json"
 
-            # Create chat with system instruction if present
-            if system_instruction or json_mode or self.config.json_mode:
-                model = self.genai.GenerativeModel(
-                    model_name=self.config.model,
-                    system_instruction=system_instruction,
-                    generation_config=generation_config,
-                )
+            generation_config = self.types.GenerateContentConfig(**config_kwargs)
+
+            # Build contents from messages
+            if gemini_messages:
+                contents = gemini_messages
             else:
-                model = self.model
+                contents = [self.types.Content(role="user", parts=[self.types.Part.from_text(text="")])]
 
-            chat = model.start_chat(history=gemini_messages[:-1] if len(gemini_messages) > 1 else [])
-            response = chat.send_message(gemini_messages[-1]["parts"][0] if gemini_messages else "")
+            response = self.client.models.generate_content(
+                model=self.config.model,
+                contents=contents,
+                config=generation_config,
+            )
 
             return LLMResponse(
                 content=response.text,
@@ -203,21 +202,25 @@ class GeminiProvider(BaseLLMProvider):
     def stream_chat(self, messages: list[Message]) -> Generator[str, None, None]:
         gemini_messages, system_instruction = self._convert_messages(messages)
 
+        config_kwargs = {
+            "temperature": self.config.temperature,
+            "top_p": self.config.top_p,
+        }
         if system_instruction:
-            model = self.genai.GenerativeModel(
-                model_name=self.config.model,
-                system_instruction=system_instruction,
-            )
+            config_kwargs["system_instruction"] = system_instruction
+
+        generation_config = self.types.GenerateContentConfig(**config_kwargs)
+
+        if gemini_messages:
+            contents = gemini_messages
         else:
-            model = self.model
+            contents = [self.types.Content(role="user", parts=[self.types.Part.from_text(text="")])]
 
-        chat = model.start_chat(history=gemini_messages[:-1] if len(gemini_messages) > 1 else [])
-        response = chat.send_message(
-            gemini_messages[-1]["parts"][0] if gemini_messages else "",
-            stream=True
-        )
-
-        for chunk in response:
+        for chunk in self.client.models.generate_content_stream(
+            model=self.config.model,
+            contents=contents,
+            config=generation_config,
+        ):
             if chunk.text:
                 yield chunk.text
 
@@ -230,15 +233,31 @@ class GeminiProvider(BaseLLMProvider):
             from PIL import Image
             img = Image.open(image_path)
 
+            config_kwargs = {
+                "temperature": self.config.temperature,
+                "top_p": self.config.top_p,
+            }
             if system_prompt:
-                model = self.genai.GenerativeModel(
-                    model_name=self.config.model,
-                    system_instruction=system_prompt,
-                )
-            else:
-                model = self.vision_model
+                config_kwargs["system_instruction"] = system_prompt
 
-            response = model.generate_content([prompt, img])
+            generation_config = self.types.GenerateContentConfig(**config_kwargs)
+
+            # Create content with image and prompt
+            contents = [
+                self.types.Content(
+                    role="user",
+                    parts=[
+                        self.types.Part.from_text(text=prompt),
+                        self.types.Part.from_image(image=img),
+                    ]
+                )
+            ]
+
+            response = self.client.models.generate_content(
+                model=self.config.model,
+                contents=contents,
+                config=generation_config,
+            )
             return response.text
 
     async def avision(self, image_path: str, prompt: str, system_prompt: Optional[str] = None) -> str:

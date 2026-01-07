@@ -19,8 +19,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Directory Paths
 # =============================================================================
 
-PDF_DIR = BASE_DIR / "data/pdfs"
-NON_PDF_DIR = BASE_DIR / "data/non_pdfs"
+SOURCES_DIR = BASE_DIR / "data/sources"  # Input: documents to process
+PDF_DIR = BASE_DIR / "data/pdfs"          # Output: PDFs (copied or converted)
 IMAGE_DIR = BASE_DIR / "data/images"
 DETECTION_DIR = BASE_DIR / "data/detections"
 PROCESSED_DIR = BASE_DIR / "data/processed"
@@ -185,8 +185,8 @@ CONTENT_TYPE_WEIGHTS = {
 # Convert Path objects to strings for external use
 # =============================================================================
 
+SOURCES_DIR = str(SOURCES_DIR.resolve())
 PDF_DIR = str(PDF_DIR.resolve())
-NON_PDF_DIR = str(NON_PDF_DIR.resolve())
 IMAGE_DIR = str(IMAGE_DIR.resolve())
 DETECTION_DIR = str(DETECTION_DIR.resolve())
 PROCESSED_DIR = str(PROCESSED_DIR.resolve())
@@ -196,11 +196,13 @@ SYSTEM_PROMPT_TEXT_EXTRACT = str(SYSTEM_PROMPT_TEXT_EXTRACT.resolve())
 USER_PROMPT_IMAGE_DESC = str(USER_PROMPT_IMAGE_DESC.resolve())
 USER_PROMPT_TEXT_EXTRACT = str(USER_PROMPT_TEXT_EXTRACT.resolve())
 TABLE_SUMMARY_PROMPT_PATH = str(TABLE_SUMMARY_PROMPT_PATH.resolve())
-CHUNKS_DIR = str((BASE_DIR / "../data/chunks").resolve())
+CHUNKS_DIR = str(CHUNKS_DIR.resolve())
 EMBEDDINGS_DIR = str(EMBEDDINGS_DIR.resolve())
 VECTOR_STORE_DIR = str(VECTOR_STORE_DIR.resolve())
 INDEX_DIR = str(INDEX_DIR.resolve())
-CACHE_DIR = str((BASE_DIR / "../data/cache").resolve())
+CACHE_DIR = str(CACHE_DIR.resolve())
 
-# Ensure cache directory exists
+# Ensure directories exist
+Path(SOURCES_DIR).mkdir(parents=True, exist_ok=True)
+Path(PDF_DIR).mkdir(parents=True, exist_ok=True)
 Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)

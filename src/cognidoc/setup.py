@@ -233,10 +233,15 @@ class SetupWizard:
     def _validate_gemini(self, api_key: str) -> bool:
         """Validate Gemini API key."""
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            model.generate_content("test", generation_config={"max_output_tokens": 5})
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=api_key)
+            config = types.GenerateContentConfig(max_output_tokens=5)
+            client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents="test",
+                config=config,
+            )
             console.print("[green]✓[/green] Clé API Gemini validée")
             return True
         except Exception as e:
