@@ -259,14 +259,19 @@ class CogniDoc:
         from .constants import SOURCES_DIR
         import shutil
 
-        # Copy source files to SOURCES_DIR if provided
+        # Copy source files to SOURCES_DIR if provided (skip if already in SOURCES_DIR)
         if source is not None:
             if isinstance(source, (str, Path)):
                 source = [str(source)]
             sources = [str(s) for s in source]
+            sources_dir_path = Path(SOURCES_DIR).resolve()
 
             for src_path in sources:
-                src = Path(src_path)
+                src = Path(src_path).resolve()
+                # Skip if file is already in SOURCES_DIR
+                if src.parent == sources_dir_path:
+                    logger.info(f"File {src.name} already in sources directory, skipping copy")
+                    continue
                 if src.is_file():
                     dest = Path(SOURCES_DIR) / src.name
                     logger.info(f"Copying {src} to {dest}")
@@ -274,6 +279,10 @@ class CogniDoc:
                 elif src.is_dir():
                     for file in src.iterdir():
                         if file.is_file():
+                            file_resolved = file.resolve()
+                            # Skip if already in SOURCES_DIR
+                            if file_resolved.parent == sources_dir_path:
+                                continue
                             dest = Path(SOURCES_DIR) / file.name
                             logger.info(f"Copying {file} to {dest}")
                             shutil.copy2(file, dest)
@@ -353,31 +362,40 @@ class CogniDoc:
         from .hybrid_retriever import HybridRetriever
 
         if self._retriever is None:
-            self._retriever = HybridRetriever(
-                use_reranking=self.config.use_reranking,
-            )
+            self._retriever = HybridRetriever()
 
         top_k = top_k or self.config.top_k
 
         # Execute retrieval
-        result = self._retriever.retrieve(question, top_k=top_k)
+        result = self._retriever.retrieve(
+            question,
+            top_k=top_k,
+            use_reranking=self.config.use_reranking,
+        )
 
-        # Format sources
+        # Format sources from vector results
         sources = []
-        for ref in result.references[:5]:
+        for node_with_score in result.vector_results[:5]:
+            doc = node_with_score.node
+            text = doc.text
             sources.append({
-                "text": ref.text[:500] + "..." if len(ref.text) > 500 else ref.text,
-                "source": ref.metadata.get("source", "Unknown"),
-                "page": ref.metadata.get("page_number", None),
+                "text": text[:500] + "..." if len(text) > 500 else text,
+                "source": doc.metadata.get("source", "Unknown"),
+                "page": doc.metadata.get("page_number", None),
             })
 
+        # Get query type from query analysis
+        query_type = None
+        if result.query_analysis and result.query_analysis.query_type:
+            query_type = result.query_analysis.query_type.value
+
         return QueryResult(
-            answer=result.generated_answer or "",
+            answer=result.fused_context or "",
             sources=sources,
-            query_type=result.query_type.value if result.query_type else None,
+            query_type=query_type,
             retrieval_stats={
-                "vector_results": result.vector_results_count,
-                "graph_results": result.graph_results_count,
+                "vector_results": len(result.vector_results),
+                "graph_results": len(result.graph_results.entities) if result.graph_results else 0,
             },
         )
 

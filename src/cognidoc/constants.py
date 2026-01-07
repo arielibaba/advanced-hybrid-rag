@@ -14,6 +14,8 @@ load_dotenv()
 # Get the directory of the current file (constants.py)
 # After restructuring: src/cognidoc/constants.py -> project root is ../../
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# Package directory for prompts and other package resources
+PACKAGE_DIR = Path(__file__).resolve().parent
 
 # =============================================================================
 # Directory Paths
@@ -96,25 +98,25 @@ MEMORY_WINDOW = int(float(os.getenv("MEMORY_WINDOW", str(CONTEXT_WINDOW * 0.5)))
 TEMPERATURE_QUERY_EXPANSION = 0.3
 
 # =============================================================================
-# Prompt Files
+# Prompt Files (in package directory)
 # =============================================================================
 
-SYSTEM_PROMPT_IMAGE_DESC = BASE_DIR / "prompts/system_prompt_for_image_description.md"
-USER_PROMPT_IMAGE_DESC = BASE_DIR / "prompts/user_prompt_for_image_description.md"
+SYSTEM_PROMPT_IMAGE_DESC = PACKAGE_DIR / "prompts/system_prompt_for_image_description.md"
+USER_PROMPT_IMAGE_DESC = PACKAGE_DIR / "prompts/user_prompt_for_image_description.md"
 
-SYSTEM_PROMPT_TEXT_EXTRACT = BASE_DIR / "prompts/system_prompt_for_text_extract.md"
-USER_PROMPT_TEXT_EXTRACT = BASE_DIR / "prompts/user_prompt_for_text_extract.md"
+SYSTEM_PROMPT_TEXT_EXTRACT = PACKAGE_DIR / "prompts/system_prompt_for_text_extract.md"
+USER_PROMPT_TEXT_EXTRACT = PACKAGE_DIR / "prompts/user_prompt_for_text_extract.md"
 
-TABLE_SUMMARY_PROMPT_PATH = BASE_DIR / "prompts/markdown_extract_header_and_summarize_prompt.md"
+TABLE_SUMMARY_PROMPT_PATH = PACKAGE_DIR / "prompts/markdown_extract_header_and_summarize_prompt.md"
 
-SYSTEM_PROMPT_REWRITE_QUERY = BASE_DIR / "prompts/system_prompt_rewrite_query.md"
-USER_PROMPT_REWRITE_QUERY = BASE_DIR / "prompts/user_prompt_rewrite_query.md"
+SYSTEM_PROMPT_REWRITE_QUERY = PACKAGE_DIR / "prompts/system_prompt_rewrite_query.md"
+USER_PROMPT_REWRITE_QUERY = PACKAGE_DIR / "prompts/user_prompt_rewrite_query.md"
 
-SYSTEM_PROMPT_EXPAND_QUERY = BASE_DIR / "prompts/system_prompt_expand_query.md"
-USER_PROMPT_EXPAND_QUERY = BASE_DIR / "prompts/user_prompt_expand_query.md"
+SYSTEM_PROMPT_EXPAND_QUERY = PACKAGE_DIR / "prompts/system_prompt_expand_query.md"
+USER_PROMPT_EXPAND_QUERY = PACKAGE_DIR / "prompts/user_prompt_expand_query.md"
 
-SYSTEM_PROMPT_GENERATE_FINAL_ANSWER = BASE_DIR / "prompts/system_prompt_generate_final_answer.md"
-USER_PROMPT_GENERATE_FINAL_ANSWER = BASE_DIR / "prompts/user_prompt_generate_final_answer.md"
+SYSTEM_PROMPT_GENERATE_FINAL_ANSWER = PACKAGE_DIR / "prompts/system_prompt_generate_final_answer.md"
+USER_PROMPT_GENERATE_FINAL_ANSWER = PACKAGE_DIR / "prompts/user_prompt_generate_final_answer.md"
 
 # =============================================================================
 # Chunking Configuration
