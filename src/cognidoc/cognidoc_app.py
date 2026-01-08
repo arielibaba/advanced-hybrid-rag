@@ -56,6 +56,8 @@ from .utils.rag_utils import (
 from .utils.advanced_rag import verify_citations
 from .hybrid_retriever import HybridRetriever, HybridRetrievalResult
 from .utils.logger import logger, retrieval_metrics
+from .complexity import evaluate_complexity, should_use_agent, AGENT_THRESHOLD
+from .agent import CogniDocAgent, AgentState, create_agent
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -355,6 +357,11 @@ def parse_args():
         action="store_true",
         help="Create a public shareable link"
     )
+    parser.add_argument(
+        "--no-agent",
+        action="store_true",
+        help="Disable agentic RAG for complex queries (faster, simpler)"
+    )
     return parser.parse_args()
 
 
@@ -376,21 +383,44 @@ if child_index:
 else:
     logger.warning("Vector index not available - some features may be limited")
 
+# Initialize agentic RAG (for complex queries)
+cognidoc_agent: CogniDocAgent = None
+ENABLE_AGENTIC_RAG = True  # Can be disabled via CLI or env
+
+
+def get_agent() -> CogniDocAgent:
+    """Lazy initialization of the agent."""
+    global cognidoc_agent
+    if cognidoc_agent is None and ENABLE_AGENTIC_RAG:
+        cognidoc_agent = create_agent(
+            retriever=hybrid_retriever,
+            max_steps=7,
+            temperature=0.3,
+        )
+        logger.info("CogniDocAgent initialized for complex queries")
+    return cognidoc_agent
+
 
 def chat_conversation(
     user_message: str,
     history: list,
     enable_reranking: bool = True,
     enable_graph: bool = True,
+    enable_agent: bool = True,
 ):
     """
     Main chat conversation handler with hybrid RAG.
+
+    Supports two paths:
+    - Fast path: Standard RAG pipeline for simple queries
+    - Agent path: Multi-step reasoning for complex queries
 
     Args:
         user_message: User's input message
         history: Conversation history
         enable_reranking: Whether to use LLM reranking
         enable_graph: Whether to use GraphRAG (knowledge graph)
+        enable_agent: Whether to use agentic RAG for complex queries
 
     Yields:
         Updated conversation history
@@ -428,6 +458,78 @@ def chat_conversation(
     candidates = parse_rewritten_query(rewritten)
     if not candidates:
         candidates = [user_message]
+
+    # ==========================================================================
+    # AGENTIC PATH: Evaluate complexity and route to agent if needed
+    # ==========================================================================
+    if enable_agent and ENABLE_AGENTIC_RAG:
+        use_agent, complexity = should_use_agent(
+            query=user_message,
+            routing=routing_decision,
+            rewritten_query=rewritten,
+        )
+
+        if use_agent:
+            logger.info(
+                f"Agent path triggered: complexity={complexity.score:.2f}, "
+                f"level={complexity.level.value}, reason={complexity.reasoning}"
+            )
+
+            agent = get_agent()
+            if agent:
+                try:
+                    # Run agent with streaming feedback
+                    history.append({"role": "assistant", "content": ""})
+
+                    # Stream agent progress
+                    for state, message in agent.run_streaming(user_message, complexity):
+                        if state == AgentState.FINISHED:
+                            # Final answer will come from result
+                            pass
+                        elif state == AgentState.NEEDS_CLARIFICATION:
+                            # Agent needs clarification
+                            history[-1]["content"] = f"**Clarification needed:** {message}"
+                            yield convert_history_to_tuples(history)
+                            return
+                        elif state == AgentState.ERROR:
+                            logger.error(f"Agent error: {message}")
+                            # Fall through to standard path
+                            break
+                        else:
+                            # Progress update (optional: could show in UI)
+                            logger.debug(f"Agent [{state.value}]: {message[:100]}")
+
+                    # Get final result
+                    result = agent.run(user_message, complexity)
+
+                    if result.success:
+                        t_end = time.perf_counter()
+                        total_time = t_end - t0
+
+                        # Format answer with agent metadata
+                        answer = result.answer
+                        if result.metadata.get("forced_conclusion"):
+                            answer += "\n\n*Note: Response based on available information.*"
+
+                        history[-1]["content"] = answer
+
+                        logger.info(
+                            f"Agent completed: {len(result.steps)} steps, "
+                            f"tools={result.metadata.get('tools_used', [])}, "
+                            f"total_time={total_time:.2f}s"
+                        )
+
+                        yield convert_history_to_tuples(history)
+                        return
+
+                except Exception as e:
+                    logger.error(f"Agent execution failed: {e}, falling back to standard path")
+                    # Remove the empty assistant message and fall through
+                    history.pop()
+
+    # ==========================================================================
+    # FAST PATH: Standard RAG pipeline
+    # ==========================================================================
 
     # Retrieval (hybrid or vector-only)
     t3 = time.perf_counter()
@@ -851,6 +953,14 @@ def main():
         logger.info("Reranking disabled via CLI argument")
     else:
         logger.info("Reranking enabled by default")
+
+    # Set agentic RAG based on CLI argument
+    global ENABLE_AGENTIC_RAG
+    if args.no_agent:
+        ENABLE_AGENTIC_RAG = False
+        logger.info("Agentic RAG disabled via CLI argument")
+    else:
+        logger.info("Agentic RAG enabled for complex queries")
 
     # Create Gradio app
     demo = create_gradio_app(default_reranking=default_reranking)

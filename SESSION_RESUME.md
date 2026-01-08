@@ -2,7 +2,7 @@
 
 ## Résumé
 
-Suite de la transformation en package Python. Corrections de bugs et ajout de tests.
+Implémentation d'un système RAG agentique conditionnel avec boucle ReAct.
 
 ## Tâches complétées cette session
 
@@ -10,153 +10,147 @@ Suite de la transformation en package Python. Corrections de bugs et ajout de te
 |-------|---------|-------------|
 | Bug NameError 'LLM' | `hybrid_retriever.py:145` | Remplacé `LLM` par `DEFAULT_LLM_MODEL` |
 | Tests providers | `tests/test_providers.py` | +10 nouveaux tests (32 au total) |
-| LLM par défaut Gemini | `constants.py`, `hybrid_retriever.py`, `cognidoc_app.py` | `DEFAULT_LLM_MODEL = gemini-2.0-flash` |
-| Test app Gradio | - | App testée et fonctionnelle sur port 7860 |
+| LLM par défaut Gemini | `constants.py` | `DEFAULT_LLM_MODEL = gemini-2.0-flash` |
+| **Agentic RAG** | 4 nouveaux fichiers | Système agent conditionnel complet |
 
-## Commit
-
-```
-5c77ae4 - Fix hybrid retriever bug and add provider tests
-```
-
-## Ce qui fonctionne
-
-```bash
-# Installation
-pip install git+https://github.com/arielibaba/cognidoc.git
-pip install "cognidoc[all] @ git+https://github.com/arielibaba/cognidoc.git"
-
-# Import Python
-from cognidoc import CogniDoc, __version__  # OK
-
-# CLI
-cognidoc --help      # OK
-cognidoc info        # OK
-cognidoc init        # OK
-cognidoc serve       # OK
-
-# App Gradio
-python -m cognidoc.cognidoc_app --no-rerank  # OK, port 7860
-
-# Tests
-python -m pytest tests/test_providers.py -v  # 32 passed
-```
-
-## Structure du package
+## Architecture Agentic RAG
 
 ```
-src/cognidoc/
-├── __init__.py          # Exports: CogniDoc, CogniDocConfig
-├── __main__.py          # python -m cognidoc
-├── api.py               # Classe CogniDoc principale
-├── cli.py               # Interface CLI
-├── constants.py         # Chemins et constantes
-├── graph_config.py      # Config GraphRAG
-├── cognidoc_app.py      # Interface Gradio
-├── hybrid_retriever.py  # Retriever hybride (FIX: LLM -> DEFAULT_LLM_MODEL)
-├── utils/
-│   ├── llm_providers.py       # Providers LLM (google.genai)
-│   ├── embedding_providers.py # Providers Embeddings (google.genai)
-│   └── ...
-└── ...
-
-tests/
-├── __init__.py
-└── test_providers.py    # 32 tests unitaires
+┌─────────────────────────────────────────────────────────────────┐
+│                        USER QUERY                                │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                 ┌────────────────────────┐
+                 │  Query Classification  │
+                 │  + Complexity Score    │
+                 └────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              │ score < 0.55                  │ score >= 0.55
+              ▼                               ▼
+    ┌──────────────────┐           ┌──────────────────┐
+    │   FAST PATH      │           │   AGENT PATH     │
+    │   Standard RAG   │           │   ReAct Loop     │
+    │   (~80% queries) │           │   (~20% queries) │
+    └──────────────────┘           └──────────────────┘
 ```
 
-## Providers flexibles
+## Nouveaux modules
+
+### 1. `complexity.py` - Évaluation complexité (25 tests)
 
 ```python
-# Gemini LLM + Ollama Embeddings (défaut)
-CogniDoc(llm_provider="gemini", embedding_provider="ollama")
+from cognidoc.complexity import should_use_agent
 
-# Full cloud
-CogniDoc(llm_provider="openai", embedding_provider="openai")
-
-# Full local
-CogniDoc(llm_provider="ollama", embedding_provider="ollama")
+use_agent, score = should_use_agent(query, routing, rewritten)
+# score.score: 0.0-1.0
+# score.level: SIMPLE | MODERATE | COMPLEX | AMBIGUOUS
 ```
 
-## Tests unitaires (32 tests)
+Signaux évalués:
+- Query type (ANALYTICAL, COMPARATIVE → agent)
+- Nombre d'entités (≥3 → complex)
+- Sous-questions (≥3 → complex)
+- Mots-clés complexes (pourquoi, compare, analyse...)
+- Faible confidence routing
 
-```
-TestLLMConfig                    - 2 tests
-TestMessage                      - 2 tests
-TestLLMResponse                  - 1 test
-TestEmbeddingConfig              - 2 tests
-TestDefaultEmbeddingModels       - 1 test
-TestOllamaProvider               - 2 tests
-TestGeminiProvider               - 1 test
-TestOpenAIProvider               - 2 tests
-TestProviderAvailability         - 4 tests
-TestCreateProvider               - 3 tests
-TestBatchEmbedding               - 2 tests
-TestAnthropicProvider            - 2 tests  (NEW)
-TestGeminiEmbeddingProvider      - 2 tests  (NEW)
-TestJSONMode                     - 2 tests  (NEW)
-TestVisionFunctionality          - 2 tests  (NEW)
-TestProviderEnumValues           - 2 tests  (NEW)
-```
+### 2. `agent_tools.py` - 8 outils (33 tests)
 
-## État des index
+| Outil | Description |
+|-------|-------------|
+| `RETRIEVE_VECTOR` | Recherche sémantique |
+| `RETRIEVE_GRAPH` | Parcours knowledge graph |
+| `LOOKUP_ENTITY` | Info entité spécifique |
+| `COMPARE_ENTITIES` | Comparaison structurée |
+| `SYNTHESIZE` | Fusion de contextes |
+| `VERIFY_CLAIM` | Vérification factuelle |
+| `ASK_CLARIFICATION` | Demander précision |
+| `FINAL_ANSWER` | Réponse finale |
 
-- **Vector**: 11,484 documents (Qdrant)
-- **BM25**: 11,484 documents
-- **Graph**: 15,183 noeuds, 20,568 arêtes, 3,912 communautés
-- **PDFs**: 133 fichiers
+### 3. `agent.py` - CogniDocAgent ReAct (27 tests)
 
-## Dépendances modulaires (pyproject.toml)
+```python
+from cognidoc.agent import create_agent
 
-```toml
-[project.optional-dependencies]
-ui = ["gradio>=4.0"]
-yolo = ["ultralytics", "opencv-python", "torch"]
-ollama = ["ollama>=0.4"]
-cloud = ["google-genai", "openai", "anthropic"]
-all = ["cognidoc[ui,yolo,ollama,cloud,conversion]"]
+agent = create_agent(retriever, max_steps=7)
+result = agent.run("Compare Gemini et GPT-4")
+print(result.answer)  # Réponse multi-étapes
+print(result.steps)   # Trace du raisonnement
 ```
 
-## Commandes utiles
+Boucle ReAct:
+1. **THINK** - Analyser, décider action
+2. **ACT** - Exécuter outil
+3. **OBSERVE** - Traiter résultat
+4. **REFLECT** - Évaluer si objectif atteint
+
+## Commandes CLI
 
 ```bash
-# Lancer l'app (avec index existants)
-python -m cognidoc.cognidoc_app --no-rerank
+# Avec agent (défaut)
+python -m cognidoc.cognidoc_app
 
-# CLI
-cognidoc info
-cognidoc serve --port 7860
+# Sans agent (fast path uniquement)
+python -m cognidoc.cognidoc_app --no-agent
+
+# Sans reranking + sans agent (le plus rapide)
+python -m cognidoc.cognidoc_app --no-rerank --no-agent
 
 # Tests
-python -m pytest tests/test_providers.py -v
-
-# Développement
-pip install -e ".[all,dev]"
+python -m pytest tests/ -v  # 117 tests
 ```
-
-## Prochaines améliorations possibles
-
-1. **Tests d'intégration** - Ajouter tests end-to-end pour le pipeline
-2. **CI/CD** - Configurer GitHub Actions pour les tests automatiques
-3. **Documentation** - Générer docs API avec Sphinx ou MkDocs
-4. **Streaming chat** - Implémenter streaming dans `CogniDoc.chat()`
 
 ## Configuration par défaut
 
 ```
 LLM:       gemini-2.0-flash (Gemini)
 Embedding: qwen3-embedding:0.6b (Ollama)
+Agent:     Activé (seuil complexité: 0.55)
 ```
 
-Variables dans `constants.py`:
-- `DEFAULT_LLM_MODEL` = gemini-2.0-flash
-- `EMBED_MODEL` = qwen3-embedding:0.6b
+## Tests unitaires (117 tests)
 
-## Fichiers modifiés cette session
+| Module | Tests |
+|--------|-------|
+| `test_complexity.py` | 25 |
+| `test_agent_tools.py` | 33 |
+| `test_agent.py` | 27 |
+| `test_providers.py` | 32 |
+| **Total** | **117** |
 
-| Fichier | Description |
-|---------|-------------|
-| `src/cognidoc/constants.py` | Ajout `DEFAULT_LLM_MODEL = GEMINI_LLM_MODEL` |
-| `src/cognidoc/hybrid_retriever.py` | Import/usage `DEFAULT_LLM_MODEL` au lieu de `OLLAMA_DEFAULT_MODEL` |
-| `src/cognidoc/cognidoc_app.py` | Import/usage `DEFAULT_LLM_MODEL` au lieu de `OLLAMA_DEFAULT_MODEL` |
-| `tests/test_providers.py` | +10 nouveaux tests pour providers |
+## Structure du package
+
+```
+src/cognidoc/
+├── __init__.py
+├── api.py               # Classe CogniDoc principale
+├── cli.py               # Interface CLI
+├── cognidoc_app.py      # Interface Gradio + intégration agent
+├── complexity.py        # (NEW) Évaluation complexité query
+├── agent.py             # (NEW) CogniDocAgent ReAct
+├── agent_tools.py       # (NEW) 8 outils pour l'agent
+├── hybrid_retriever.py  # Retriever hybride
+├── constants.py         # DEFAULT_LLM_MODEL = gemini-2.0-flash
+└── ...
+
+tests/
+├── test_complexity.py   # (NEW) 25 tests
+├── test_agent_tools.py  # (NEW) 33 tests
+├── test_agent.py        # (NEW) 27 tests
+└── test_providers.py    # 32 tests
+```
+
+## Commits cette session
+
+```
+3606bb8 - Update SESSION_RESUME.md with session summary
+5c77ae4 - Fix hybrid retriever bug and add provider tests
+```
+
+## Prochaines améliorations possibles
+
+1. **UI feedback agent** - Afficher les étapes de raisonnement en temps réel
+2. **Caching agent** - Mettre en cache les résultats des outils
+3. **Agent memory** - Persistance du contexte entre sessions
+4. **Métriques agent** - Dashboard des performances agent vs fast path
