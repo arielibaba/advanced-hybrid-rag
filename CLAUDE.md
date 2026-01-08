@@ -24,10 +24,19 @@ make format           # Format with black
 make lint             # Run pylint
 make refactor         # Format + lint
 
+# Quick test via Python API
+python -c "
+from cognidoc import CogniDoc
+doc = CogniDoc(llm_provider='gemini', embedding_provider='ollama')
+doc.ingest(skip_schema_wizard=True)  # Use existing schema
+result = doc.query('Your question here')
+print(result.answer)
+"
+
 # First-time setup (interactive wizard)
 python -m src.setup
 
-# Run ingestion pipeline
+# Run ingestion pipeline directly
 python -m src.run_ingestion_pipeline --vision-provider ollama
 
 # Launch chat interface
@@ -78,15 +87,17 @@ Documents → PDF Conversion → Images (600 DPI) → YOLO Detection
 
 | Module | Purpose |
 |--------|---------|
-| `src/run_ingestion_pipeline.py` | Main async pipeline orchestrator |
-| `src/cognidoc_app.py` | Gradio chat with FastAPI static file serving |
-| `src/hybrid_retriever.py` | Vector + Graph fusion with query orchestration |
-| `src/knowledge_graph.py` | NetworkX graph with Louvain community detection |
-| `src/query_orchestrator.py` | LLM-based query classification and routing |
-| `src/constants.py` | Central config (paths, thresholds, model names) |
-| `src/utils/llm_client.py` | Singleton LLM client (Gemini default) |
-| `src/utils/llm_providers.py` | Multi-provider abstraction layer |
-| `src/utils/rag_utils.py` | Document, VectorIndex, KeywordIndex classes |
+| `src/cognidoc/api.py` | Main CogniDoc class (public API) |
+| `src/cognidoc/run_ingestion_pipeline.py` | Async pipeline orchestrator |
+| `src/cognidoc/cognidoc_app.py` | Gradio chat with FastAPI static file serving |
+| `src/cognidoc/hybrid_retriever.py` | Vector + Graph fusion with query orchestration |
+| `src/cognidoc/knowledge_graph.py` | NetworkX graph with Louvain community detection |
+| `src/cognidoc/query_orchestrator.py` | LLM-based query classification and routing |
+| `src/cognidoc/schema_wizard.py` | Interactive/auto schema generation for GraphRAG |
+| `src/cognidoc/constants.py` | Central config (paths, thresholds, model names) |
+| `src/cognidoc/utils/llm_client.py` | Singleton LLM client (Gemini default) |
+| `src/cognidoc/utils/llm_providers.py` | Multi-provider abstraction layer |
+| `src/cognidoc/utils/rag_utils.py` | Document, VectorIndex, KeywordIndex classes |
 
 ### Query Routing
 
@@ -133,7 +144,8 @@ ollama pull qwen3-vl:8b-instruct            # Vision (optional)
 
 | Directory | Content |
 |-----------|---------|
-| `data/pdfs/` | Input documents (non-PDFs auto-converted) |
+| `data/sources/` | Input documents (any format, including subfolders) |
+| `data/pdfs/` | Converted PDFs |
 | `data/images/` | 600 DPI page images |
 | `data/detections/` | YOLO-cropped regions |
 | `data/processed/` | Extracted text/tables/descriptions |
@@ -141,3 +153,14 @@ ollama pull qwen3-vl:8b-instruct            # Vision (optional)
 | `data/indexes/` | Vector/keyword/graph indexes |
 | `data/vector_store/` | Qdrant database |
 | `data/cache/` | Embedding cache (SQLite) |
+
+## Schema Wizard
+
+The schema wizard runs automatically during ingestion when no `config/graph_schema.yaml` exists:
+
+1. **Interactive mode** (requires `questionary`): Prompts for domain type, language, and whether to auto-generate
+2. **Auto-generation**: Samples documents from `data/sources/` and uses LLM to identify entity/relationship types
+
+Key options:
+- `doc.ingest(skip_schema_wizard=True)` - Use existing schema without prompts
+- `config/graph_schema_generic.yaml` - Template for manual schema creation
