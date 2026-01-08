@@ -11,6 +11,13 @@ Suite de la transformation en package Python. Corrections de bugs et ajout de te
 | Bug NameError 'LLM' | `hybrid_retriever.py:145` | Remplacé `LLM` par `DEFAULT_LLM_MODEL` |
 | Tests providers | `tests/test_providers.py` | +10 nouveaux tests (32 au total) |
 | LLM par défaut Gemini | `constants.py`, `hybrid_retriever.py`, `cognidoc_app.py` | `DEFAULT_LLM_MODEL = gemini-2.0-flash` |
+| Test app Gradio | - | App testée et fonctionnelle sur port 7860 |
+
+## Commit
+
+```
+5c77ae4 - Fix hybrid retriever bug and add provider tests
+```
 
 ## Ce qui fonctionne
 
@@ -46,7 +53,7 @@ src/cognidoc/
 ├── constants.py         # Chemins et constantes
 ├── graph_config.py      # Config GraphRAG
 ├── cognidoc_app.py      # Interface Gradio
-├── hybrid_retriever.py  # Retriever hybride (FIX: LLM -> OLLAMA_DEFAULT_MODEL)
+├── hybrid_retriever.py  # Retriever hybride (FIX: LLM -> DEFAULT_LLM_MODEL)
 ├── utils/
 │   ├── llm_providers.py       # Providers LLM (google.genai)
 │   ├── embedding_providers.py # Providers Embeddings (google.genai)
