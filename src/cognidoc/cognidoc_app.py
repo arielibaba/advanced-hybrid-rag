@@ -1232,7 +1232,12 @@ def create_gradio_app(default_reranking: bool = True):
                     interactive=False,
                 )
 
-                refresh_btn = gr.Button("🔄 Refresh Metrics", variant="secondary")
+                with gr.Row():
+                    refresh_btn = gr.Button("🔄 Refresh Metrics", variant="secondary")
+                    export_csv_btn = gr.Button("📥 Export CSV", variant="secondary")
+                    export_json_btn = gr.Button("📥 Export JSON", variant="secondary")
+
+                export_file = gr.File(label="Download", visible=False)
 
                 def refresh_metrics():
                     return (
@@ -1243,10 +1248,52 @@ def create_gradio_app(default_reranking: bool = True):
                         get_recent_queries_dataframe(),
                     )
 
+                def export_csv():
+                    """Export metrics to CSV file."""
+                    import tempfile
+                    from datetime import datetime
+                    metrics = get_performance_metrics()
+                    csv_content = metrics.export_to_csv()
+                    if not csv_content:
+                        return gr.update(visible=False)
+                    # Write to temp file
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filepath = tempfile.gettempdir() + f"/cognidoc_metrics_{timestamp}.csv"
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        f.write(csv_content)
+                    return gr.update(value=filepath, visible=True)
+
+                def export_json():
+                    """Export metrics to JSON file."""
+                    import tempfile
+                    from datetime import datetime
+                    metrics = get_performance_metrics()
+                    json_content = metrics.export_to_json()
+                    if not json_content or json_content == '{"exported_at": "", "total_records": 0, "global_stats": {}, "queries": []}':
+                        return gr.update(visible=False)
+                    # Write to temp file
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filepath = tempfile.gettempdir() + f"/cognidoc_metrics_{timestamp}.json"
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        f.write(json_content)
+                    return gr.update(value=filepath, visible=True)
+
                 refresh_btn.click(
                     refresh_metrics,
                     inputs=[],
                     outputs=[stats_display, latency_chart, distribution_chart, timeline_chart, queries_table],
+                )
+
+                export_csv_btn.click(
+                    export_csv,
+                    inputs=[],
+                    outputs=[export_file],
+                )
+
+                export_json_btn.click(
+                    export_json,
+                    inputs=[],
+                    outputs=[export_file],
                 )
 
         # Footer

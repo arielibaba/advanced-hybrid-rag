@@ -358,6 +358,112 @@ class PerformanceMetrics:
         self._session_cache_misses = 0
         logger.info("Cleared all performance metrics")
 
+    def export_to_csv(self, filepath: Optional[str] = None) -> str:
+        """
+        Export all metrics to CSV format.
+
+        Args:
+            filepath: Optional path to save CSV file
+
+        Returns:
+            CSV content as string (also saves to file if filepath provided)
+        """
+        import csv
+        from io import StringIO
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT
+                    datetime(timestamp, 'unixepoch', 'localtime') as datetime,
+                    query_hash, path, query_type, complexity_score,
+                    total_time_ms, rewrite_time_ms, retrieval_time_ms,
+                    rerank_time_ms, llm_time_ms,
+                    cache_hits, cache_misses,
+                    agent_steps, tools_used
+                FROM query_metrics
+                ORDER BY timestamp DESC
+            """)
+            rows = cursor.fetchall()
+
+        if not rows:
+            return ""
+
+        # Get column names
+        columns = rows[0].keys()
+
+        # Write to StringIO
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(columns)
+        for row in rows:
+            writer.writerow([row[col] for col in columns])
+
+        csv_content = output.getvalue()
+
+        # Save to file if path provided
+        if filepath:
+            with open(filepath, 'w', newline='', encoding='utf-8') as f:
+                f.write(csv_content)
+            logger.info(f"Exported {len(rows)} metrics to {filepath}")
+
+        return csv_content
+
+    def export_to_json(self, filepath: Optional[str] = None) -> str:
+        """
+        Export all metrics to JSON format.
+
+        Args:
+            filepath: Optional path to save JSON file
+
+        Returns:
+            JSON content as string (also saves to file if filepath provided)
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT
+                    datetime(timestamp, 'unixepoch', 'localtime') as datetime,
+                    timestamp, query_hash, path, query_type, complexity_score,
+                    total_time_ms, rewrite_time_ms, retrieval_time_ms,
+                    rerank_time_ms, llm_time_ms,
+                    cache_hits, cache_misses,
+                    agent_steps, tools_used
+                FROM query_metrics
+                ORDER BY timestamp DESC
+            """)
+            rows = cursor.fetchall()
+
+        # Convert to list of dicts
+        data = []
+        for row in rows:
+            record = dict(row)
+            # Parse tools_used JSON if present
+            if record.get("tools_used"):
+                try:
+                    record["tools_used"] = json.loads(record["tools_used"])
+                except json.JSONDecodeError:
+                    pass
+            data.append(record)
+
+        # Include global stats
+        export_data = {
+            "exported_at": datetime.now().isoformat(),
+            "total_records": len(data),
+            "global_stats": self.get_global_stats(),
+            "queries": data,
+        }
+
+        json_content = json.dumps(export_data, indent=2, ensure_ascii=False)
+
+        # Save to file if path provided
+        if filepath:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(json_content)
+            logger.info(f"Exported {len(data)} metrics to {filepath}")
+
+        return json_content
+
 
 # Global metrics instance (lazy initialization)
 _metrics_instance: Optional[PerformanceMetrics] = None
