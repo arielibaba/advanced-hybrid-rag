@@ -155,7 +155,67 @@ Documents → PDF Conversion → Images (600 DPI) → YOLO Detection*
 
 *YOLO is optional - falls back to simple page-level extraction if not installed.
 
-### Query Routing
+### Query Processing Flow
+
+```
+                                    User Query
+                                        │
+                                        ▼
+                        ┌───────────────────────────────┐
+                        │     Query Rewriter            │
+                        │  (adds conversation context)  │
+                        └───────────────────────────────┘
+                                        │
+                        ┌───────────────┴───────────────┐
+                        ▼                               ▼
+                ┌───────────────┐               ┌───────────────┐
+                │   Classifier  │               │  Complexity   │
+                │  (query type) │               │   Evaluator   │
+                └───────────────┘               └───────────────┘
+                        │                               │
+                        ▼                               ▼
+                   Query Type                    Complexity Score
+              (factual/relational/               (0.0 - 1.0)
+               exploratory/procedural)
+                        │                               │
+                        └───────────────┬───────────────┘
+                                        │
+                            ┌───────────┴───────────┐
+                            │   score >= 0.55 ?     │
+                            └───────────┬───────────┘
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                    │ NO                │                   │ YES
+                    ▼                   ▼                   ▼
+        ┌───────────────────┐  ┌───────────────┐  ┌───────────────────┐
+        │    FAST PATH      │  │ ENHANCED PATH │  │    AGENT PATH     │
+        │  (Standard RAG)   │  │ (score 0.35+) │  │   (ReAct Loop)    │
+        └───────────────────┘  └───────────────┘  └───────────────────┘
+                    │                   │                   │
+                    ▼                   ▼                   ▼
+        ┌───────────────────────────────────────┐  ┌───────────────────┐
+        │          Hybrid Retriever             │  │  THINK → ACT →    │
+        │  (Vector weight + Graph weight based  │  │  OBSERVE → REFLECT│
+        │   on query type)                      │  │  (max 7 steps)    │
+        └───────────────────────────────────────┘  └───────────────────┘
+                    │                                       │
+                    ▼                                       ▼
+        ┌───────────────────┐               ┌───────────────────────────┐
+        │  LLM Generation   │               │     9 Agent Tools         │
+        │  (final answer)   │               │  (retrieve, synthesize,   │
+        └───────────────────┘               │   compare, verify, etc.)  │
+                    │                       └───────────────────────────┘
+                    │                                       │
+                    └───────────────────┬───────────────────┘
+                                        ▼
+                                ┌───────────────┐
+                                │    Response   │
+                                │ (same language│
+                                │  as query)    │
+                                └───────────────┘
+```
+
+### Query Routing (Fast/Enhanced Path)
 
 | Query Type | Example | Vector | Graph |
 |------------|---------|--------|-------|
@@ -164,9 +224,9 @@ Documents → PDF Conversion → Images (600 DPI) → YOLO Detection*
 | **EXPLORATORY** | "List all main topics" | 0% | 100% |
 | **PROCEDURAL** | "How to configure?" | 80% | 20% |
 
-### Agentic RAG
+### Agentic RAG (Agent Path)
 
-For complex queries requiring multi-step reasoning, CogniDoc automatically activates an agent with specialized tools:
+For complex queries requiring multi-step reasoning, CogniDoc automatically activates a ReAct agent:
 
 | Tool | Purpose |
 |------|---------|
@@ -185,6 +245,47 @@ The agent is triggered automatically for:
 - Comparative questions between entities
 - Meta-questions about the database (e.g., "How many documents?", "List all documents")
 - Ambiguous queries needing clarification
+
+**ReAct Loop:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         START                               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  THINK: Analyze query, decide next action                   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────┐
+                    │  final_answer?  │───YES───▶ Return Response
+                    └─────────────────┘
+                              │ NO
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  ACT: Execute chosen tool (retrieve, compare, etc.)         │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  OBSERVE: Process tool result                               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  REFLECT: Do I have enough info? (max 7 steps)              │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌─────────────────┐
+                    │  enough info?   │───YES───▶ THINK (final_answer)
+                    └─────────────────┘
+                              │ NO
+                              ▼
+                         Loop to THINK
+```
 
 ### Conversation Memory
 
