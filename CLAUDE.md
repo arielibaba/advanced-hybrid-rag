@@ -234,6 +234,30 @@ Agent tools (`agent_tools.py`):
 
 Language rules are enforced in prompts to ensure responses match query language (French/English).
 
+### Performance Optimizations
+
+**Tool Result Caching** (`agent_tools.py`):
+```python
+class ToolCache:
+    TTL_CONFIG = {
+        "database_stats": 300,    # 5 min
+        "retrieve_vector": 120,   # 2 min
+        "retrieve_graph": 120,    # 2 min
+        "lookup_entity": 300,     # 5 min
+        "compare_entities": 180,  # 3 min
+    }
+```
+
+**Streaming Progress** (`cognidoc_app.py`):
+- Agent path shows emoji progress: 🤔 (thinking), ⚡ (acting), 👁️ (observing), 💭 (reflecting)
+- Cache hits marked with `[cached]` indicator
+- Real-time updates via Gradio yield
+
+**Optimized Prompts** (`agent.py`):
+- SYSTEM_PROMPT emphasizes efficiency: "Target 2-3 steps max"
+- THINK_PROMPT encourages immediate action
+- REFLECT_PROMPT: "Can you answer NOW?"
+
 ### Conversation Memory
 
 The chatbot maintains context across messages via query rewriting (`helpers.py`):

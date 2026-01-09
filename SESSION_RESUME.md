@@ -257,6 +257,32 @@ SYSTEM_PROMPT = """You are an efficient research assistant. Your goal is to answ
 | `test_providers.py` | 33 |
 | **Total validé** | **127** |
 
+### 4. Fix langue dans le Fast Path (`user_prompt_generate_final_answer.md`)
+
+Le fast path répondait parfois en anglais (ex: "No relevant details are available").
+
+**Avant:**
+```markdown
+- If insufficient information is available, respond clearly with:
+  **"No relevant details are available."**
+```
+
+**Après:**
+```markdown
+- If insufficient information is available, respond in the user's language:
+  - French: **"Je n'ai pas trouvé d'informations pertinentes..."**
+  - English: **"I could not find relevant information..."**
+- CRITICAL: Deliver your ENTIRE response in the SAME LANGUAGE as the user's question.
+```
+
+## Commits de cette session
+
+| Hash | Description |
+|------|-------------|
+| `a56ecdf` | Improve agent performance: caching, streaming, and optimized prompts |
+| `0a05114` | Update SESSION_RESUME.md with performance improvements |
+| `c68164f` | Fix language consistency in fast path responses |
+
 ## Améliorations futures
 
 1. **Support langues additionnelles** - Espagnol, Allemand, etc.

@@ -16,6 +16,8 @@ A document processing and retrieval pipeline that combines **Vector RAG** and **
 - **Semantic Chunking**: Embedding-based coherent text chunks
 - **Intelligent Query Routing**: LLM-based classification with smart skip logic
 - **Clickable PDF References**: Response references link directly to source PDFs
+- **Tool Result Caching**: TTL-based caching reduces latency for repeated queries
+- **Real-time Progress**: Visual streaming of agent reasoning steps (🤔⚡👁️💭)
 - **No LangChain/LlamaIndex**: Direct Qdrant and provider integration
 
 ## Installation
@@ -307,6 +309,29 @@ CogniDoc automatically detects the query language and responds in the same langu
 - French queries receive French responses
 - English queries receive English responses
 - Clarification requests are also language-aware
+
+### Performance Features
+
+**Tool Result Caching**: Agent tool results are cached with configurable TTL to reduce latency:
+
+| Tool | TTL | Purpose |
+|------|-----|---------|
+| `database_stats` | 5 min | Database metadata rarely changes |
+| `retrieve_vector` | 2 min | Search results for same query |
+| `retrieve_graph` | 2 min | Graph traversal results |
+| `lookup_entity` | 5 min | Entity details |
+| `compare_entities` | 3 min | Comparison results |
+
+**Real-time Progress**: During agent execution, the UI displays progress with emoji indicators:
+```
+🤔 [Step 1/7] Analyzing query...
+🤔 Thought: I need to search for documents about...
+⚡ Calling retrieve_vector(query="...")
+👁️ Result [cached]: Found 5 relevant documents...
+💭 Analysis: The documents contain information about...
+```
+
+**Optimized Prompts**: Agent prompts are tuned for efficiency, targeting 2-3 steps for most queries (down from 5-7).
 
 ## Configuration
 
