@@ -17,6 +17,9 @@ import urllib.parse
 import warnings
 
 import gradio as gr
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
 
 from .constants import (
     INDEX_DIR,
@@ -58,6 +61,7 @@ from .hybrid_retriever import HybridRetriever, HybridRetrievalResult
 from .utils.logger import logger, retrieval_metrics
 from .complexity import evaluate_complexity, should_use_agent, AGENT_THRESHOLD
 from .agent import CogniDocAgent, AgentState, create_agent
+from .utils.metrics import QueryMetrics, get_performance_metrics
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -374,6 +378,56 @@ CUSTOM_CSS = """
     .header-title { font-size: 1.5rem; }
     .header-badge { display: none; }
 }
+
+/* Dashboard styles */
+.metrics-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.metrics-card-title {
+    color: #1a202c;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 1rem;
+}
+
+.metrics-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.metrics-label {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 0.25rem;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.dashboard-section {
+    margin-bottom: 2rem;
+}
+
+.dashboard-section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1a202c;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #667eea;
+}
 """
 
 
@@ -584,6 +638,22 @@ def chat_conversation(
                             f"tools={result.metadata.get('tools_used', [])}, "
                             f"total_time={total_time:.2f}s"
                         )
+
+                        # Log metrics for agent path
+                        cache_stats = get_performance_metrics().get_session_cache_stats()
+                        agent_metrics = QueryMetrics(
+                            path="agent",
+                            query_type=routing_decision.query_type if routing_decision else None,
+                            complexity_score=complexity.score if complexity else None,
+                            total_time_ms=total_time * 1000,
+                            rewrite_time_ms=(t2 - t1) * 1000,
+                            cache_hits=cache_stats["hits"],
+                            cache_misses=cache_stats["misses"],
+                            agent_steps=len(result.steps),
+                            tools_used=result.metadata.get("tools_used", []),
+                        )
+                        get_performance_metrics().log_query(user_message, agent_metrics)
+                        get_performance_metrics().reset_session_cache_stats()
 
                         yield convert_history_to_tuples(history)
                         return
@@ -816,7 +886,177 @@ def chat_conversation(
     - TOTAL:                {t6 - t0:.2f}s
     """)
 
+    # Log metrics for fast/enhanced path
+    path_type = "enhanced" if complexity and complexity.score >= 0.35 else "fast"
+    fast_metrics = QueryMetrics(
+        path=path_type,
+        query_type=routing_decision.query_type if routing_decision else None,
+        complexity_score=complexity.score if complexity else None,
+        total_time_ms=(t6 - t0) * 1000,
+        rewrite_time_ms=(t2 - t1) * 1000,
+        retrieval_time_ms=retrieval_time * 1000,
+        rerank_time_ms=rerank_time * 1000,
+        llm_time_ms=(t6 - t5) * 1000,
+    )
+    get_performance_metrics().log_query(user_message, fast_metrics)
+
     yield convert_history_to_tuples(history)
+
+
+# =============================================================================
+# Dashboard Helper Functions
+# =============================================================================
+
+def create_latency_by_path_chart():
+    """Create bar chart of average latency by path."""
+    stats = get_performance_metrics().get_global_stats()
+    path_stats = stats.get("path_distribution", {})
+
+    if not path_stats:
+        fig = go.Figure()
+        fig.add_annotation(text="No data yet", xref="paper", yref="paper",
+                          x=0.5, y=0.5, showarrow=False, font=dict(size=20))
+        fig.update_layout(height=300)
+        return fig
+
+    paths = list(path_stats.keys())
+    latencies = [path_stats[p]["avg_latency_ms"] for p in paths]
+    counts = [path_stats[p]["count"] for p in paths]
+
+    colors = {"fast": "#22c55e", "enhanced": "#eab308", "agent": "#ef4444"}
+    bar_colors = [colors.get(p, "#667eea") for p in paths]
+
+    fig = go.Figure(data=[
+        go.Bar(
+            x=paths,
+            y=latencies,
+            text=[f"{l:.0f}ms" for l in latencies],
+            textposition="outside",
+            marker_color=bar_colors,
+            hovertemplate="<b>%{x}</b><br>Avg: %{y:.0f}ms<br>Count: %{customdata}<extra></extra>",
+            customdata=counts,
+        )
+    ])
+    fig.update_layout(
+        title="Average Latency by Path",
+        xaxis_title="Path",
+        yaxis_title="Latency (ms)",
+        height=300,
+        margin=dict(t=50, b=50, l=50, r=20),
+    )
+    return fig
+
+
+def create_latency_over_time_chart():
+    """Create line chart of latency over time."""
+    data = get_performance_metrics().get_latency_over_time(limit=50)
+
+    if not data:
+        fig = go.Figure()
+        fig.add_annotation(text="No data yet", xref="paper", yref="paper",
+                          x=0.5, y=0.5, showarrow=False, font=dict(size=20))
+        fig.update_layout(height=300)
+        return fig
+
+    df = pd.DataFrame(data)
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    colors = {"fast": "#22c55e", "enhanced": "#eab308", "agent": "#ef4444"}
+
+    fig = go.Figure()
+    for path in df["path"].unique():
+        path_df = df[df["path"] == path]
+        fig.add_trace(go.Scatter(
+            x=path_df["timestamp"],
+            y=path_df["total_time_ms"],
+            mode="lines+markers",
+            name=path,
+            line=dict(color=colors.get(path, "#667eea")),
+            hovertemplate="<b>%{x}</b><br>%{y:.0f}ms<extra></extra>",
+        ))
+
+    fig.update_layout(
+        title="Latency Over Time",
+        xaxis_title="Time",
+        yaxis_title="Latency (ms)",
+        height=300,
+        margin=dict(t=50, b=50, l=50, r=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
+
+
+def create_path_distribution_chart():
+    """Create pie chart of query path distribution."""
+    distribution = get_performance_metrics().get_path_distribution()
+
+    if not distribution:
+        fig = go.Figure()
+        fig.add_annotation(text="No data yet", xref="paper", yref="paper",
+                          x=0.5, y=0.5, showarrow=False, font=dict(size=20))
+        fig.update_layout(height=300)
+        return fig
+
+    colors = {"fast": "#22c55e", "enhanced": "#eab308", "agent": "#ef4444"}
+
+    fig = go.Figure(data=[go.Pie(
+        labels=list(distribution.keys()),
+        values=list(distribution.values()),
+        marker_colors=[colors.get(p, "#667eea") for p in distribution.keys()],
+        textinfo="label+percent",
+        hovertemplate="<b>%{label}</b><br>Count: %{value}<br>%{percent}<extra></extra>",
+    )])
+    fig.update_layout(
+        title="Query Distribution by Path",
+        height=300,
+        margin=dict(t=50, b=20, l=20, r=20),
+    )
+    return fig
+
+
+def get_recent_queries_dataframe():
+    """Get recent queries as a DataFrame for display."""
+    queries = get_performance_metrics().get_recent_queries(limit=20)
+
+    if not queries:
+        return pd.DataFrame(columns=["Time", "Path", "Type", "Latency (ms)", "Cache Hits", "Steps"])
+
+    df = pd.DataFrame(queries)
+    df = df.rename(columns={
+        "timestamp": "Time",
+        "path": "Path",
+        "query_type": "Type",
+        "latency_ms": "Latency (ms)",
+        "cache_hits": "Cache Hits",
+        "agent_steps": "Steps",
+    })
+    return df[["Time", "Path", "Type", "Latency (ms)", "Cache Hits", "Steps"]]
+
+
+def get_global_stats_html():
+    """Generate HTML for global stats display."""
+    stats = get_performance_metrics().get_global_stats()
+
+    return f"""
+    <div class="metrics-grid">
+        <div class="metrics-card">
+            <div class="metrics-value">{stats.get('total_queries', 0)}</div>
+            <div class="metrics-label">Total Queries</div>
+        </div>
+        <div class="metrics-card">
+            <div class="metrics-value">{stats.get('avg_latency_ms', 0):.0f}ms</div>
+            <div class="metrics-label">Avg Latency</div>
+        </div>
+        <div class="metrics-card">
+            <div class="metrics-value">{stats.get('cache_hit_rate', 0):.1f}%</div>
+            <div class="metrics-label">Cache Hit Rate</div>
+        </div>
+        <div class="metrics-card">
+            <div class="metrics-value">{stats.get('avg_agent_steps', 0):.1f}</div>
+            <div class="metrics-label">Avg Agent Steps</div>
+        </div>
+    </div>
+    """
 
 
 def create_gradio_app(default_reranking: bool = True):
@@ -862,108 +1102,152 @@ def create_gradio_app(default_reranking: bool = True):
         </div>
         """)
 
-        with gr.Row():
-            # Main chat area
-            with gr.Column(scale=4):
-                chatbot = gr.Chatbot(
-                    height=550,
-                    label="",
-                    show_label=False,
-                    elem_classes=["chat-container"],
-                )
+        with gr.Tabs():
+            # =====================================================================
+            # Chat Tab
+            # =====================================================================
+            with gr.Tab("💬 Chat"):
+                with gr.Row():
+                    # Main chat area
+                    with gr.Column(scale=4):
+                        chatbot = gr.Chatbot(
+                            height=550,
+                            label="",
+                            show_label=False,
+                            elem_classes=["chat-container"],
+                        )
+
+                        with gr.Row():
+                            user_input = gr.Textbox(
+                                label="",
+                                show_label=False,
+                                placeholder="Ask me anything about your documents...",
+                                lines=1,
+                                max_lines=3,
+                                scale=6,
+                                container=False,
+                            )
+                            submit_btn = gr.Button(
+                                "Send",
+                                variant="primary",
+                                scale=1,
+                                min_width=100,
+                                elem_classes=["primary-btn"],
+                            )
+
+                        with gr.Row():
+                            reset_btn = gr.Button(
+                                "🗑️ Clear Conversation",
+                                variant="secondary",
+                                size="sm",
+                                elem_classes=["secondary-btn"],
+                            )
+                            gr.HTML("""
+                                <div style="flex: 1; text-align: right; color: #94a3b8; font-size: 0.8rem; padding: 8px;">
+                                    Press Enter to send • Shift+Enter for new line
+                                </div>
+                            """)
+
+                    # Settings panel
+                    with gr.Column(scale=1, min_width=280):
+                        gr.HTML("""
+                        <div class="settings-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                            </svg>
+                            Retrieval Settings
+                        </div>
+                        """)
+
+                        rerank_toggle = gr.Checkbox(
+                            label="🎯 Smart Reranking",
+                            value=default_reranking,
+                            info="LLM-based relevance scoring (+2-5s)",
+                            elem_classes=["toggle-card"],
+                        )
+
+                        graph_toggle = gr.Checkbox(
+                            label="🔗 Knowledge Graph",
+                            value=True,
+                            info="Entity relationships & connections",
+                            elem_classes=["toggle-card"],
+                        )
+
+                        gr.HTML('<div class="settings-divider"></div>')
+
+                        gr.HTML("""
+                        <div class="info-card">
+                            <div class="info-card-title">💡 How it works</div>
+                            <div class="info-card-text">
+                                <strong>Smart Reranking</strong> uses AI to re-score
+                                retrieved documents for better relevance.
+                                <br><br>
+                                <strong>Knowledge Graph</strong> understands entity
+                                relationships for complex queries like
+                                "How is X related to Y?"
+                            </div>
+                        </div>
+                        """)
+
+                        gr.HTML('<div class="settings-divider"></div>')
+
+                        # System status
+                        graph_status = "active" if hybrid_status.get("graph", False) else "inactive"
+                        vector_status = "active" if hybrid_status.get("vector_index", False) or hybrid_status.get("keyword_index", False) else "inactive"
+
+                        gr.HTML(f"""
+                        <div style="font-size: 0.8rem; color: #64748b;">
+                            <div style="margin-bottom: 8px; font-weight: 600;">System Status</div>
+                            <div style="display: flex; flex-direction: column; gap: 6px;">
+                                <div class="status-indicator status-{vector_status}">
+                                    <span>●</span> Vector Index
+                                </div>
+                                <div class="status-indicator status-{graph_status}">
+                                    <span>●</span> Knowledge Graph
+                                </div>
+                            </div>
+                        </div>
+                        """)
+
+            # =====================================================================
+            # Metrics Tab
+            # =====================================================================
+            with gr.Tab("📊 Metrics"):
+                gr.HTML("<h3 class='dashboard-section-title'>Global Statistics</h3>")
+                stats_display = gr.HTML(get_global_stats_html())
+
+                gr.HTML("<h3 class='dashboard-section-title'>Performance Charts</h3>")
+                with gr.Row():
+                    latency_chart = gr.Plot(value=create_latency_by_path_chart())
+                    distribution_chart = gr.Plot(value=create_path_distribution_chart())
 
                 with gr.Row():
-                    user_input = gr.Textbox(
-                        label="",
-                        show_label=False,
-                        placeholder="Ask me anything about your documents...",
-                        lines=1,
-                        max_lines=3,
-                        scale=6,
-                        container=False,
-                    )
-                    submit_btn = gr.Button(
-                        "Send",
-                        variant="primary",
-                        scale=1,
-                        min_width=100,
-                        elem_classes=["primary-btn"],
-                    )
+                    timeline_chart = gr.Plot(value=create_latency_over_time_chart())
 
-                with gr.Row():
-                    reset_btn = gr.Button(
-                        "🗑️ Clear Conversation",
-                        variant="secondary",
-                        size="sm",
-                        elem_classes=["secondary-btn"],
-                    )
-                    gr.HTML("""
-                        <div style="flex: 1; text-align: right; color: #94a3b8; font-size: 0.8rem; padding: 8px;">
-                            Press Enter to send • Shift+Enter for new line
-                        </div>
-                    """)
-
-            # Settings panel
-            with gr.Column(scale=1, min_width=280):
-                gr.HTML("""
-                <div class="settings-title">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-                    </svg>
-                    Retrieval Settings
-                </div>
-                """)
-
-                rerank_toggle = gr.Checkbox(
-                    label="🎯 Smart Reranking",
-                    value=default_reranking,
-                    info="LLM-based relevance scoring (+2-5s)",
-                    elem_classes=["toggle-card"],
+                gr.HTML("<h3 class='dashboard-section-title'>Recent Queries</h3>")
+                queries_table = gr.Dataframe(
+                    value=get_recent_queries_dataframe(),
+                    headers=["Time", "Path", "Type", "Latency (ms)", "Cache Hits", "Steps"],
+                    interactive=False,
                 )
 
-                graph_toggle = gr.Checkbox(
-                    label="🔗 Knowledge Graph",
-                    value=True,
-                    info="Entity relationships & connections",
-                    elem_classes=["toggle-card"],
+                refresh_btn = gr.Button("🔄 Refresh Metrics", variant="secondary")
+
+                def refresh_metrics():
+                    return (
+                        get_global_stats_html(),
+                        create_latency_by_path_chart(),
+                        create_path_distribution_chart(),
+                        create_latency_over_time_chart(),
+                        get_recent_queries_dataframe(),
+                    )
+
+                refresh_btn.click(
+                    refresh_metrics,
+                    inputs=[],
+                    outputs=[stats_display, latency_chart, distribution_chart, timeline_chart, queries_table],
                 )
-
-                gr.HTML('<div class="settings-divider"></div>')
-
-                gr.HTML("""
-                <div class="info-card">
-                    <div class="info-card-title">💡 How it works</div>
-                    <div class="info-card-text">
-                        <strong>Smart Reranking</strong> uses AI to re-score
-                        retrieved documents for better relevance.
-                        <br><br>
-                        <strong>Knowledge Graph</strong> understands entity
-                        relationships for complex queries like
-                        "How is X related to Y?"
-                    </div>
-                </div>
-                """)
-
-                gr.HTML('<div class="settings-divider"></div>')
-
-                # System status
-                graph_status = "active" if hybrid_status.get("graph", False) else "inactive"
-                vector_status = "active" if hybrid_status.get("vector_index", False) or hybrid_status.get("keyword_index", False) else "inactive"
-
-                gr.HTML(f"""
-                <div style="font-size: 0.8rem; color: #64748b;">
-                    <div style="margin-bottom: 8px; font-weight: 600;">System Status</div>
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <div class="status-indicator status-{vector_status}">
-                            <span>●</span> Vector Index
-                        </div>
-                        <div class="status-indicator status-{graph_status}">
-                            <span>●</span> Knowledge Graph
-                        </div>
-                    </div>
-                </div>
-                """)
 
         # Footer
         gr.HTML("""

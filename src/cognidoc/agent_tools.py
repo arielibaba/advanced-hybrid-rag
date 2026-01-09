@@ -27,88 +27,10 @@ from .utils.logger import logger
 
 
 # =============================================================================
-# Tool Cache
+# Tool Cache (persistent SQLite backend)
 # =============================================================================
 
-class ToolCache:
-    """
-    TTL-based cache for tool results.
-
-    Reduces latency for repeated queries by caching tool outputs.
-    Different tools can have different TTL values.
-    """
-
-    _instance = None
-    _cache: Dict[str, Tuple[Any, float]] = {}
-
-    # TTL values in seconds per tool type
-    TTL_CONFIG = {
-        "database_stats": 300,      # 5 minutes - rarely changes
-        "retrieve_vector": 120,     # 2 minutes - search results
-        "retrieve_graph": 120,      # 2 minutes - graph results
-        "lookup_entity": 300,       # 5 minutes - entity data
-        "compare_entities": 180,    # 3 minutes - comparison results
-    }
-    DEFAULT_TTL = 60  # 1 minute default
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._cache = {}
-        return cls._instance
-
-    @classmethod
-    def _hash_args(cls, tool_name: str, **kwargs) -> str:
-        """Create a hash key from tool name and arguments."""
-        args_str = json.dumps(kwargs, sort_keys=True, default=str)
-        hash_input = f"{tool_name}:{args_str}"
-        return hashlib.md5(hash_input.encode()).hexdigest()
-
-    @classmethod
-    def get(cls, tool_name: str, **kwargs) -> Optional[Any]:
-        """Get cached result if valid, None otherwise."""
-        cache_key = cls._hash_args(tool_name, **kwargs)
-
-        if cache_key in cls._cache:
-            result, timestamp = cls._cache[cache_key]
-            ttl = cls.TTL_CONFIG.get(tool_name, cls.DEFAULT_TTL)
-
-            if time.time() - timestamp < ttl:
-                logger.debug(f"Cache HIT for {tool_name} (key={cache_key[:8]}...)")
-                return result
-            else:
-                # Expired - remove from cache
-                del cls._cache[cache_key]
-                logger.debug(f"Cache EXPIRED for {tool_name}")
-
-        return None
-
-    @classmethod
-    def set(cls, tool_name: str, result: Any, **kwargs) -> None:
-        """Store result in cache."""
-        cache_key = cls._hash_args(tool_name, **kwargs)
-        cls._cache[cache_key] = (result, time.time())
-        logger.debug(f"Cache SET for {tool_name} (key={cache_key[:8]}...)")
-
-    @classmethod
-    def clear(cls, tool_name: Optional[str] = None) -> None:
-        """Clear cache for specific tool or all tools."""
-        if tool_name:
-            keys_to_remove = [k for k in cls._cache if k.startswith(tool_name)]
-            for k in keys_to_remove:
-                del cls._cache[k]
-            logger.info(f"Cache cleared for {tool_name}")
-        else:
-            cls._cache.clear()
-            logger.info("Cache cleared for all tools")
-
-    @classmethod
-    def stats(cls) -> Dict[str, Any]:
-        """Get cache statistics."""
-        return {
-            "entries": len(cls._cache),
-            "tools": list(set(k.split(":")[0] for k in cls._cache.keys())) if cls._cache else [],
-        }
+from .utils.tool_cache import ToolCache, get_tool_cache
 
 if TYPE_CHECKING:
     from .hybrid_retriever import HybridRetriever

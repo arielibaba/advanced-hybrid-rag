@@ -31,6 +31,8 @@ EMBEDDINGS_DIR = BASE_DIR / "data/embeddings"
 VECTOR_STORE_DIR = BASE_DIR / "data/vector_store"
 INDEX_DIR = BASE_DIR / "data/indexes"
 CACHE_DIR = BASE_DIR / "data/cache"
+TOOL_CACHE_DB = CACHE_DIR / "tool_cache.db"
+METRICS_DB = CACHE_DIR / "metrics.db"
 
 # =============================================================================
 # YOLO Model Configuration
@@ -206,6 +208,8 @@ EMBEDDINGS_DIR = str(EMBEDDINGS_DIR.resolve())
 VECTOR_STORE_DIR = str(VECTOR_STORE_DIR.resolve())
 INDEX_DIR = str(INDEX_DIR.resolve())
 CACHE_DIR = str(CACHE_DIR.resolve())
+TOOL_CACHE_DB = str(TOOL_CACHE_DB.resolve())
+METRICS_DB = str(METRICS_DB.resolve())
 
 # Ensure directories exist
 Path(SOURCES_DIR).mkdir(parents=True, exist_ok=True)
