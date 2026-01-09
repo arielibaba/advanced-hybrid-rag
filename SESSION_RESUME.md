@@ -2,7 +2,7 @@
 
 ## Résumé
 
-Corrections majeures pour le routage agent, la détection de langue, et les questions méta sur la base de données.
+Corrections majeures pour le routage agent, la détection de langue, les questions méta sur la base de données, et la **mémoire conversationnelle du chatbot**.
 
 ## Tâches complétées cette session
 
@@ -17,6 +17,8 @@ Corrections majeures pour le routage agent, la détection de langue, et les ques
 | **Fix helpers TypeError** | `helpers.py` | Gestion format multimodal Gradio (list/None) |
 | **Fix reranking provider** | `advanced_rag.py` | Utilisation `llm_chat()` au lieu de `ollama.Client()` |
 | **Fix agent response empty** | `cognidoc_app.py` | Capture correcte du retour du générateur `run_streaming()` |
+| **Fix chatbot memory** | `agent.py`, `cognidoc_app.py`, `helpers.py` | Mémoire conversationnelle fonctionnelle |
+| **Fix DatabaseStatsTool list_documents** | `agent_tools.py` | Retourne les noms des documents avec `list_documents=True` |
 
 ## Modifications clés
 
@@ -68,6 +70,39 @@ Tous les prompts incluent maintenant :
 - ALWAYS respond in the SAME LANGUAGE as the user's question.
 - If the user asks in French, respond in French.
 - If the user asks in English, respond in English.
+```
+
+### 5. Mémoire conversationnelle (`cognidoc_app.py`, `agent.py`, `helpers.py`)
+
+La mémoire du chatbot fonctionne maintenant correctement :
+
+```
+User: "Combien de documents cette base comprend-elle?"
+Bot:  "Cette base de données comprend 5 documents."
+
+User: "cite-les-moi"
+Bot:  "Cette base de données comprend les 5 documents suivants: test_document, Rapport Sémantique, ..."
+```
+
+**Flux corrigé:**
+1. Query rewriter transforme "cite-les-moi" → "Cite-moi les 5 documents que cette base comprend."
+2. L'agent reçoit la query réécrite (pas le message brut)
+3. DatabaseStatsTool retourne les noms des documents via `list_documents=True`
+
+### 6. DatabaseStatsTool amélioré (`agent_tools.py`)
+
+```python
+class DatabaseStatsTool(BaseTool):
+    parameters = {
+        "list_documents": "Set to true to get the list of document names/titles"
+    }
+
+    def execute(self, list_documents: bool = False) -> ToolResult:
+        # Utilise get_all_documents() au lieu de .documents
+        docs = ki.get_all_documents()
+        if list_documents:
+            doc_names = [doc.metadata.get('source', {}).get('document') for doc in docs]
+            stats["document_names"] = sorted(list(set(doc_names)))
 ```
 
 ## Tests (43+ tests passent)
@@ -126,6 +161,15 @@ tests/
 4. **Reranking 404** - Utilisait ollama.Client() avec modèle Gemini
 5. **Gemini SDK manquant** - google-genai non installé dans venv
 6. **Réponse agent vide** - Le générateur `run_streaming()` n'était pas correctement consommé, puis `run()` était appelé une seconde fois inutilement. Fix: capture du retour via `StopIteration.value`
+7. **Mémoire chatbot cassée** - "cite-les-moi" après "combien de documents" causait "que voulez-vous citer?"
+   - **Cause racine**: `KeyError: '"answer"'` dans `agent.py` dû aux accolades non échappées dans SYSTEM_PROMPT
+   - **Fix**: `{"answer": "..."}` → `{{"answer": "..."}}`
+8. **Agent utilisant raw query** - L'agent recevait "cite-les-moi" au lieu de la query réécrite avec contexte
+   - **Fix**: `agent.run_streaming(candidates[0])` au lieu de `user_message`
+9. **parse_rewritten_query incomplet** - Ne gérait que `- ` pas `* ` comme style de bullet
+   - **Fix**: Ajout `elif stripped.startswith('* '):`
+10. **DatabaseStatsTool sans noms de documents** - Utilisait `.documents` qui n'existe pas
+    - **Fix**: Utilisation de `get_all_documents()` + extraction des métadonnées `source.document`
 
 ## Améliorations futures
 

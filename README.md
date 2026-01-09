@@ -174,15 +174,29 @@ For complex queries requiring multi-step reasoning, CogniDoc automatically activ
 | `retrieve_graph` | Query knowledge graph for relationships |
 | `lookup_entity` | Get detailed entity information |
 | `compare_entities` | Compare multiple entities |
-| `database_stats` | Get statistics about the knowledge base |
+| `database_stats` | Get statistics and list documents in the knowledge base |
 | `synthesize` | Combine information from multiple sources |
 | `verify_claim` | Fact-check statements against sources |
 
 The agent is triggered automatically for:
 - Analytical queries requiring multi-step reasoning
 - Comparative questions between entities
-- Meta-questions about the database (e.g., "How many documents?")
+- Meta-questions about the database (e.g., "How many documents?", "List all documents")
 - Ambiguous queries needing clarification
+
+### Conversation Memory
+
+CogniDoc maintains conversation context across messages, enabling natural follow-up questions:
+
+```
+User: "How many documents are in the database?"
+Bot:  "The database contains 5 documents."
+
+User: "List them"
+Bot:  "The 5 documents are: Document A, Document B, ..."
+```
+
+The query rewriter automatically incorporates context from previous messages, so "list them" becomes "List the 5 documents in the database" before being processed.
 
 ### Language Support
 
