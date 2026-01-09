@@ -388,16 +388,54 @@ def get_global_stats_html() -> str
 ### 6. Tests vérifiés
 
 ```bash
-# 125 tests passent (2 skipped - gradio import)
+# 127 tests passent
 uv run python -m pytest tests/ -v
 ```
 
 | Métrique | Valeur |
 |----------|--------|
-| Tests passés | 125 |
-| Tests skipped | 2 |
+| Tests passés | 127 |
 | Couverture cache | ✅ |
 | Couverture metrics | ✅ |
+
+### 7. Export Métriques CSV/JSON (`utils/metrics.py`, `cognidoc_app.py`)
+
+Ajout de fonctions d'export et boutons dans le dashboard :
+
+```python
+class PerformanceMetrics:
+    def export_to_csv(self, filepath: Optional[str] = None) -> str:
+        """Export all metrics to CSV format."""
+        ...
+
+    def export_to_json(self, filepath: Optional[str] = None) -> str:
+        """Export all metrics to JSON format with global stats."""
+        ...
+```
+
+**Boutons dans l'onglet Metrics:**
+- 📥 Export CSV - Télécharge toutes les requêtes en CSV
+- 📥 Export JSON - Télécharge avec stats globales incluses
+
+**Format JSON:**
+```json
+{
+  "exported_at": "2026-01-09T13:28:55",
+  "total_records": 4,
+  "global_stats": { ... },
+  "queries": [ ... ]
+}
+```
+
+### 8. Commits session 3 (complet)
+
+| Hash | Description |
+|------|-------------|
+| `c2521fa` | Add persistent SQLite cache and performance metrics dashboard |
+| `0a8f73c` | Fix QueryType enum serialization for SQLite metrics |
+| `6eddd30` | Add plotly to UI dependencies for metrics dashboard |
+| `1520d57` | Update SESSION_RESUME.md with session 3 changes |
+| `721ebc8` | Add CSV and JSON export for metrics dashboard |
 
 ## Améliorations futures
 
@@ -405,5 +443,5 @@ uv run python -m pytest tests/ -v
 2. ~~**Cache persistant** - Utiliser Redis ou SQLite pour le cache~~ ✅ Fait
 3. ~~**Métriques de performance** - Dashboard temps de réponse, cache hits~~ ✅ Fait
 4. **Tests de charge** - Benchmarks avec multiple requêtes simultanées
-5. **Export métriques** - CSV/JSON pour analyse externe
+5. ~~**Export métriques** - CSV/JSON pour analyse externe~~ ✅ Fait
 6. **Alerting** - Notifications si latence > seuil
