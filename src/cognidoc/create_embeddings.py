@@ -1,55 +1,45 @@
 """
-Embedding generation module with caching support.
+Embedding generation module with batching and caching support.
 
 This module creates embeddings for text chunks and stores them with metadata.
 Uses SHA256 content hashing to avoid re-embedding unchanged content.
+Supports batched async processing for improved performance.
 """
 
-from pathlib import Path
-from typing import Dict, List
+import asyncio
 import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
-import ollama
+from tqdm import tqdm
 
 from .utils.logger import logger, timer, PipelineTimer
 from .utils.embedding_cache import get_embedding_cache
-
-
-def get_embeddings(text: str, embed_model: str, use_cache: bool = True) -> List[float]:
-    """
-    Generate an embedding for a given text, with optional caching.
-
-    Args:
-        text: The text to embed.
-        embed_model: The name of the embedding model.
-        use_cache: Whether to use the embedding cache.
-
-    Returns:
-        The embedding vector as a list of floats.
-    """
-    # Check cache first
-    if use_cache:
-        cache = get_embedding_cache()
-        cached = cache.get(text, embed_model)
-        if cached is not None:
-            return cached
-
-    # Generate embedding
-    response = ollama.embeddings(
-        model=embed_model,
-        prompt=text
-    )
-    embed_vector = response['embedding']
-
-    # Cache the result
-    if use_cache:
-        cache.set(text, embed_vector, embed_model)
-
-    return embed_vector
+from .utils.embedding_providers import (
+    OllamaEmbeddingProvider,
+    EmbeddingConfig,
+    EmbeddingProvider,
+    get_embedding_provider,
+)
 
 
 # Path separator used to encode relative paths in filenames
 PATH_SEPARATOR = "__"
+
+# Default batch size for embedding generation
+DEFAULT_BATCH_SIZE = 32
+
+# Max concurrent requests for async embedding
+MAX_CONCURRENT_REQUESTS = 4
+
+
+@dataclass
+class ChunkToEmbed:
+    """Represents a chunk file to be embedded."""
+    file_path: Path
+    text: str
+    metadata: dict
 
 
 def decode_document_path(encoded_name: str) -> str:
@@ -65,7 +55,6 @@ def decode_document_path(encoded_name: str) -> str:
     Returns:
         The decoded relative path (without extension)
     """
-    # Replace the path separator with actual path separator
     return encoded_name.replace(PATH_SEPARATOR, "/")
 
 
@@ -98,7 +87,6 @@ def make_metadata(chunk_filename: str) -> dict:
     if "_page_" in chunk_filename:
         try:
             before, after = chunk_filename.split("_page_", 1)
-            # Decode the path-encoded document name
             document = decode_document_path(before)
             page = after.split("_")[0]
         except ValueError:
@@ -114,66 +102,78 @@ def make_metadata(chunk_filename: str) -> dict:
     }
 
 
-def create_embeddings(
-    chunks_dir: str,
-    embeddings_dir: str,
-    embed_model: str,
-    use_cache: bool = True,
-    force_reembed: bool = False
-) -> Dict[str, int]:
+def get_embeddings(text: str, embed_model: str, use_cache: bool = True) -> List[float]:
     """
-    Generate embeddings for all chunk files in chunks_dir.
-
-    Uses content-based caching to skip unchanged files.
+    Generate an embedding for a given text, with optional caching.
 
     Args:
-        chunks_dir: Directory containing chunk files.
-        embeddings_dir: Directory to save embedding JSON files.
-        embed_model: Name of the embedding model to use.
+        text: The text to embed.
+        embed_model: The name of the embedding model.
         use_cache: Whether to use the embedding cache.
-        force_reembed: If True, ignore cache and re-embed everything.
 
     Returns:
-        Statistics dictionary with counts.
+        The embedding vector as a list of floats.
     """
-    chunks_path = Path(chunks_dir)
-    embeddings_path = Path(embeddings_dir)
+    import ollama
 
-    chunks_path.mkdir(parents=True, exist_ok=True)
-    embeddings_path.mkdir(parents=True, exist_ok=True)
+    # Check cache first
+    if use_cache:
+        cache = get_embedding_cache()
+        cached = cache.get(text, embed_model)
+        if cached is not None:
+            return cached
 
-    # Initialize timer
-    pipeline_timer = PipelineTimer("embedding_generation").start()
+    # Generate embedding
+    response = ollama.embeddings(model=embed_model, prompt=text)
+    embed_vector = response['embedding']
 
+    # Cache the result
+    if use_cache:
+        cache.set(text, embed_vector, embed_model)
+
+    return embed_vector
+
+
+def collect_chunks_to_embed(
+    chunks_path: Path,
+    embeddings_path: Path,
+    embed_model: str,
+    use_cache: bool,
+    force_reembed: bool,
+    cache,
+) -> Tuple[List[ChunkToEmbed], Dict[str, int]]:
+    """
+    Collect all chunks that need to be embedded.
+
+    Args:
+        chunks_path: Directory containing chunk files
+        embeddings_path: Directory for embedding outputs
+        embed_model: Embedding model name
+        use_cache: Whether to use cache
+        force_reembed: Whether to force re-embedding
+        cache: Embedding cache instance
+
+    Returns:
+        Tuple of (chunks_to_embed, stats)
+    """
+    chunks_to_embed = []
     stats = {
         "total_files": 0,
-        "embedded": 0,
+        "to_embed": 0,
         "skipped_parent": 0,
         "skipped_short": 0,
         "cached": 0,
         "errors": 0,
     }
 
-    logger.info(f"Processing files in {chunks_path}...")
-    logger.info(f"Using embedding model: {embed_model}")
-    logger.info(f"Cache enabled: {use_cache}, Force re-embed: {force_reembed}")
-
-    # Get cache stats before
-    if use_cache:
-        cache = get_embedding_cache()
-        cache_stats_before = cache.get_stats()
-        logger.info(f"Cache stats before: {cache_stats_before['total_embeddings']} embeddings")
-
-    pipeline_timer.stage("processing_files")
-
     for file_path in chunks_path.rglob("*"):
         stats["total_files"] += 1
 
-        # Skip directories and parent chunks
+        # Skip directories
         if not file_path.is_file():
             continue
 
-        # Skip parent chunks (but not child chunks which also contain "_parent_chunk_")
+        # Skip parent chunks (but not child chunks)
         if "_parent_chunk_" in file_path.name and "_child_chunk_" not in file_path.name:
             stats["skipped_parent"] += 1
             continue
@@ -191,53 +191,189 @@ def create_embeddings(
             stats["skipped_short"] += 1
             continue
 
-        # Check if already embedded (by cache)
+        # Check cache
         if use_cache and not force_reembed:
-            cached = cache.get(text, embed_model)
-            if cached is not None:
-                # Still write the embedding file if it doesn't exist
+            cached_embedding = cache.get(text, embed_model)
+            if cached_embedding is not None:
+                # Write embedding file if it doesn't exist
                 embedding_file = embeddings_path / f"{file_path.stem}_embedding.json"
                 if not embedding_file.exists():
                     meta = make_metadata(file_path.name)
-                    data = {"embedding": cached, "metadata": meta}
+                    data = {"embedding": cached_embedding, "metadata": meta}
                     with open(embedding_file, "w", encoding="utf-8") as f:
                         json.dump(data, f)
                 stats["cached"] += 1
-                logger.debug(f"Using cached embedding for {file_path.name}")
                 continue
 
-        # Generate embedding
-        logger.info(f"Calculating embedding for: {file_path.name}...")
-        try:
-            with timer(f"embed {file_path.name}"):
-                embed_vector = get_embeddings(text, embed_model, use_cache=use_cache)
-        except Exception as e:
-            logger.error(f"Error generating embedding for {file_path.name}: {e}")
-            stats["errors"] += 1
-            continue
+        # Add to list of chunks to embed
+        metadata = make_metadata(file_path.name)
+        chunks_to_embed.append(ChunkToEmbed(
+            file_path=file_path,
+            text=text,
+            metadata=metadata,
+        ))
+        stats["to_embed"] += 1
 
-        # Build metadata and write JSON
-        meta = make_metadata(file_path.name)
-        data = {
-            "embedding": embed_vector,
-            "metadata": meta
-        }
+    return chunks_to_embed, stats
 
-        embedding_file = embeddings_path / f"{file_path.stem}_embedding.json"
-        try:
-            with open(embedding_file, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-            stats["embedded"] += 1
-            logger.debug(f"Saved embedding: {embedding_file.name}")
-        except Exception as e:
-            logger.error(f"Error writing {embedding_file.name}: {e}")
-            stats["errors"] += 1
+
+async def embed_batch_async(
+    chunks: List[ChunkToEmbed],
+    embeddings_path: Path,
+    embed_model: str,
+    use_cache: bool,
+    max_concurrent: int = MAX_CONCURRENT_REQUESTS,
+) -> Tuple[int, int]:
+    """
+    Embed a batch of chunks asynchronously.
+
+    Args:
+        chunks: List of chunks to embed
+        embeddings_path: Output directory
+        embed_model: Model name
+        use_cache: Whether to cache results
+        max_concurrent: Max concurrent requests
+
+    Returns:
+        Tuple of (success_count, error_count)
+    """
+    import httpx
+
+    cache = get_embedding_cache() if use_cache else None
+    host = "http://localhost:11434"
+    success = 0
+    errors = 0
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def process_chunk(chunk: ChunkToEmbed) -> bool:
+        nonlocal success, errors
+        async with semaphore:
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        f"{host}/api/embeddings",
+                        json={"model": embed_model, "prompt": chunk.text}
+                    )
+                    response.raise_for_status()
+                    embedding = response.json()["embedding"]
+
+                # Cache the result
+                if cache:
+                    cache.set(chunk.text, embedding, embed_model)
+
+                # Write to file
+                data = {"embedding": embedding, "metadata": chunk.metadata}
+                embedding_file = embeddings_path / f"{chunk.file_path.stem}_embedding.json"
+                with open(embedding_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+
+                success += 1
+                return True
+
+            except Exception as e:
+                logger.error(f"Error embedding {chunk.file_path.name}: {e}")
+                errors += 1
+                return False
+
+    await asyncio.gather(*[process_chunk(c) for c in chunks])
+    return success, errors
+
+
+def create_embeddings(
+    chunks_dir: str,
+    embeddings_dir: str,
+    embed_model: str,
+    use_cache: bool = True,
+    force_reembed: bool = False,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    max_concurrent: int = MAX_CONCURRENT_REQUESTS,
+) -> Dict[str, int]:
+    """
+    Generate embeddings for all chunk files in chunks_dir.
+
+    Uses batched async processing for improved performance.
+    Uses content-based caching to skip unchanged files.
+
+    Args:
+        chunks_dir: Directory containing chunk files.
+        embeddings_dir: Directory to save embedding JSON files.
+        embed_model: Name of the embedding model to use.
+        use_cache: Whether to use the embedding cache.
+        force_reembed: If True, ignore cache and re-embed everything.
+        batch_size: Number of chunks to process per batch.
+        max_concurrent: Max concurrent embedding requests.
+
+    Returns:
+        Statistics dictionary with counts.
+    """
+    chunks_path = Path(chunks_dir)
+    embeddings_path = Path(embeddings_dir)
+
+    chunks_path.mkdir(parents=True, exist_ok=True)
+    embeddings_path.mkdir(parents=True, exist_ok=True)
+
+    # Initialize timer
+    pipeline_timer = PipelineTimer("embedding_generation").start()
+
+    logger.info(f"Processing files in {chunks_path}...")
+    logger.info(f"Using embedding model: {embed_model}")
+    logger.info(f"Cache enabled: {use_cache}, Force re-embed: {force_reembed}")
+    logger.info(f"Batch size: {batch_size}, Max concurrent: {max_concurrent}")
+
+    # Get cache
+    cache = get_embedding_cache() if use_cache else None
+    if cache:
+        cache_stats_before = cache.get_stats()
+        logger.info(f"Cache stats before: {cache_stats_before['total_embeddings']} embeddings")
+
+    # Phase 1: Collect chunks to embed
+    pipeline_timer.stage("collecting_chunks")
+    logger.info("Scanning files and checking cache...")
+
+    chunks_to_embed, stats = collect_chunks_to_embed(
+        chunks_path, embeddings_path, embed_model, use_cache, force_reembed, cache
+    )
+
+    logger.info(f"Found {stats['to_embed']} chunks to embed, {stats['cached']} from cache")
+
+    # Phase 2: Process in batches with progress bar
+    if chunks_to_embed:
+        pipeline_timer.stage("embedding_batches")
+        total_success = 0
+        total_errors = 0
+
+        # Process in batches
+        num_batches = (len(chunks_to_embed) + batch_size - 1) // batch_size
+
+        with tqdm(total=len(chunks_to_embed), desc="Embedding chunks", unit="chunk") as pbar:
+            for i in range(0, len(chunks_to_embed), batch_size):
+                batch = chunks_to_embed[i:i + batch_size]
+                batch_num = i // batch_size + 1
+
+                logger.debug(f"Processing batch {batch_num}/{num_batches} ({len(batch)} chunks)")
+
+                # Run async embedding for this batch
+                success, errors = asyncio.run(
+                    embed_batch_async(
+                        batch, embeddings_path, embed_model, use_cache, max_concurrent
+                    )
+                )
+
+                total_success += success
+                total_errors += errors
+                pbar.update(len(batch))
+
+        stats["embedded"] = total_success
+        stats["errors"] += total_errors
+    else:
+        stats["embedded"] = 0
 
     # End timing
     pipeline_timer.end()
 
     # Get cache stats after
-    if use_cache:
+    if cache:
         cache_stats_after = cache.get_stats()
         new_cached = cache_stats_after['total_embeddings'] - cache_stats_before['total_embeddings']
         logger.info(f"New embeddings cached: {new_cached}")
@@ -245,7 +381,7 @@ def create_embeddings(
     # Log summary
     logger.info(f"""
     Embedding Generation Complete:
-    - Total files processed: {stats['total_files']}
+    - Total files scanned: {stats['total_files']}
     - Newly embedded: {stats['embedded']}
     - From cache: {stats['cached']}
     - Skipped (parent chunks): {stats['skipped_parent']}
@@ -255,3 +391,27 @@ def create_embeddings(
     """)
 
     return stats
+
+
+# Backward compatibility alias
+def create_embeddings_sequential(
+    chunks_dir: str,
+    embeddings_dir: str,
+    embed_model: str,
+    use_cache: bool = True,
+    force_reembed: bool = False
+) -> Dict[str, int]:
+    """
+    Sequential embedding generation (legacy mode).
+
+    Use create_embeddings() for batched async processing.
+    """
+    return create_embeddings(
+        chunks_dir=chunks_dir,
+        embeddings_dir=embeddings_dir,
+        embed_model=embed_model,
+        use_cache=use_cache,
+        force_reembed=force_reembed,
+        batch_size=1,
+        max_concurrent=1,
+    )

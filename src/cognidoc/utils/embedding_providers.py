@@ -76,15 +76,17 @@ class BaseEmbeddingProvider(ABC):
 
 
 class OllamaEmbeddingProvider(BaseEmbeddingProvider):
-    """Ollama local embedding provider."""
+    """Ollama local embedding provider with async batch support."""
 
     def __init__(self, config: EmbeddingConfig):
         super().__init__(config)
+        self._host = config.base_url or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        self._timeout = config.timeout
         try:
             import ollama
             self.client = ollama.Client(
-                host=config.base_url or os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-                timeout=config.timeout,
+                host=self._host,
+                timeout=self._timeout,
             )
             self._available = True
         except ImportError:
@@ -103,6 +105,42 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
         for text in texts:
             embeddings.append(self.embed_single(text))
         return embeddings
+
+    async def embed_async(self, texts: List[str], max_concurrent: int = 4) -> List[List[float]]:
+        """
+        Embed multiple texts with concurrent async requests.
+
+        Uses asyncio to overlap network I/O while Ollama processes sequentially.
+        This reduces total time by hiding network latency.
+
+        Args:
+            texts: List of texts to embed
+            max_concurrent: Max concurrent requests (default 4, good for local)
+
+        Returns:
+            List of embeddings in same order as input texts
+        """
+        import asyncio
+        import httpx
+
+        if not texts:
+            return []
+
+        semaphore = asyncio.Semaphore(max_concurrent)
+        results = [None] * len(texts)
+
+        async def embed_one(idx: int, text: str):
+            async with semaphore:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    response = await client.post(
+                        f"{self._host}/api/embeddings",
+                        json={"model": self.config.model, "prompt": text}
+                    )
+                    response.raise_for_status()
+                    results[idx] = response.json()["embedding"]
+
+        await asyncio.gather(*[embed_one(i, t) for i, t in enumerate(texts)])
+        return results
 
 
 class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
