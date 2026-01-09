@@ -333,6 +333,44 @@ CogniDoc automatically detects the query language and responds in the same langu
 
 **Optimized Prompts**: Agent prompts are tuned for efficiency, targeting 2-3 steps for most queries (down from 5-7).
 
+### Ingestion Pipeline Optimizations
+
+The ingestion pipeline is optimized for parallel processing on modern hardware:
+
+| Stage | Optimization | Speedup |
+|-------|--------------|---------|
+| **PDF → Images** | `ProcessPoolExecutor` (4 workers) | ~2x |
+| **Embedding Generation** | Batched async HTTP requests | ~5x |
+| **Embedding Cache** | SQLite persistent cache | Instant for cached |
+
+**Configuration for M2/M3 Macs (16GB unified memory):**
+
+```python
+# PDF conversion (CPU-bound, parallelizable)
+convert_pdf_to_image(
+    pdf_dir="data/pdfs",
+    image_dir="data/images",
+    max_workers=4,  # Good for 16GB unified memory
+    parallel=True,
+)
+
+# Embedding generation (I/O-bound, concurrent)
+create_embeddings(
+    chunks_dir="data/chunks",
+    embeddings_dir="data/embeddings",
+    batch_size=32,       # Chunks per batch
+    max_concurrent=4,    # Concurrent HTTP requests
+)
+```
+
+**Pipeline Timing (7 PDFs, 12 pages):**
+- PDF conversion: ~6s (parallel)
+- YOLO detection: ~17s
+- Embedding: <1s (with cache)
+- Index building: <1s
+- Graph extraction: ~54s
+- Total: ~80s
+
 ## Configuration
 
 ### Environment Variables

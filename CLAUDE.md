@@ -162,6 +162,11 @@ Documents → PDF Conversion → Images (600 DPI) → YOLO Detection
 | `src/cognidoc/utils/llm_client.py` | Singleton LLM client (Gemini default) |
 | `src/cognidoc/utils/llm_providers.py` | Multi-provider abstraction layer |
 | `src/cognidoc/utils/rag_utils.py` | Document, VectorIndex, KeywordIndex classes |
+| `src/cognidoc/utils/embedding_providers.py` | Embedding providers with async batch support |
+| `src/cognidoc/utils/tool_cache.py` | Persistent SQLite cache for tool results |
+| `src/cognidoc/utils/metrics.py` | Performance metrics with SQLite storage |
+| `src/cognidoc/create_embeddings.py` | Batched async embedding generation |
+| `src/cognidoc/convert_pdf_to_image.py` | Parallel PDF to image conversion |
 
 ### Query Routing
 
@@ -235,6 +240,27 @@ Agent tools (`agent_tools.py`):
 Language rules are enforced in prompts to ensure responses match query language (French/English).
 
 ### Performance Optimizations
+
+**Ingestion Pipeline Parallelization:**
+
+| Stage | Module | Optimization |
+|-------|--------|--------------|
+| PDF→Images | `convert_pdf_to_image.py` | `ProcessPoolExecutor` (4 workers) |
+| Embeddings | `create_embeddings.py` | Batched async with `httpx.AsyncClient` |
+| Cache | `utils/embedding_cache.py` | SQLite persistent cache |
+
+```python
+# PDF conversion - parallel CPU-bound
+convert_pdf_to_image(pdf_dir, image_dir, max_workers=4, parallel=True)
+
+# Embeddings - batched async I/O
+create_embeddings(chunks_dir, embeddings_dir, batch_size=32, max_concurrent=4)
+```
+
+**M2/M3 16GB Guidelines:**
+- `max_workers=4` for PDF conversion (avoids memory saturation)
+- `max_concurrent=4` for embeddings (overlaps network I/O)
+- YOLO/LLM extraction: sequential (GPU memory constraint)
 
 **Tool Result Caching** (`agent_tools.py`):
 ```python

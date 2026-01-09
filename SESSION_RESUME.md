@@ -515,20 +515,57 @@ class OllamaEmbeddingProvider:
 | `src/cognidoc/convert_pdf_to_image.py` | Ajout ProcessPoolExecutor + tqdm |
 | `src/cognidoc/utils/embedding_providers.py` | Ajout `embed_async()` |
 
-### 5. Commits session 4
+### 5. Fix asyncio conflict (`create_embeddings.py`)
+
+Le pipeline async appelait `asyncio.run()` alors qu'il était déjà dans une event loop :
+
+```python
+# Détection du contexte async
+try:
+    loop = asyncio.get_running_loop()
+    in_async_context = True
+except RuntimeError:
+    in_async_context = False
+
+# Workaround: ThreadPoolExecutor pour isoler l'event loop
+if in_async_context:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(asyncio.run, embed_batch_async(...))
+        success, errors = future.result()
+else:
+    success, errors = asyncio.run(embed_batch_async(...))
+```
+
+### 6. Commits session 4
 
 | Hash | Description |
 |------|-------------|
 | `74f94ec` | Add batched async embedding generation for faster ingestion |
 | `eed1313` | Add parallel PDF to image conversion for faster ingestion |
+| `077202b` | Fix asyncio conflict in pipeline |
 
-### 6. Optimisations pour M2 16GB
+### 8. Optimisations pour M2 16GB
 
 | Paramètre | Valeur | Raison |
 |-----------|--------|--------|
 | `max_workers` (PDF) | 4 | Évite saturation mémoire unifiée |
 | `max_concurrent` (embed) | 4 | Overlap I/O sans surcharger Ollama |
 | `batch_size` | 32 | Bon équilibre mémoire/throughput |
+
+### 9. Résultats tests pipeline
+
+Pipeline complet exécuté avec succès :
+
+| Étape | Temps | Détails |
+|-------|-------|---------|
+| **PDF → Images** | ~6s | 7 PDFs, 12 pages (parallèle 4 workers) |
+| **YOLO Detection** | ~17s | 17 images, 17 text regions |
+| **Embedding Generation** | 0.88s | 14 nouveaux + 10 du cache |
+| **Index Building** | 0.64s | 29 documents indexés |
+| **Graph Extraction** | 53.6s | 24 chunks, 64 entities, 40 relations |
+| **Graph Building** | 9.7s | 25 nodes, 19 edges, 11 communities |
+
+**Tests unitaires:** 127/127 passés
 
 ## Améliorations futures
 
