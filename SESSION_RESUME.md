@@ -16,6 +16,7 @@ Corrections majeures pour le routage agent, la détection de langue, et les ques
 | **Fix Gemini SDK** | `pyproject.toml` | Ajout dépendance `google-genai` dans extras |
 | **Fix helpers TypeError** | `helpers.py` | Gestion format multimodal Gradio (list/None) |
 | **Fix reranking provider** | `advanced_rag.py` | Utilisation `llm_chat()` au lieu de `ollama.Client()` |
+| **Fix agent response empty** | `cognidoc_app.py` | Capture correcte du retour du générateur `run_streaming()` |
 
 ## Modifications clés
 
@@ -124,6 +125,7 @@ tests/
 3. **TypeError helpers.py** - Format multimodal Gradio non géré
 4. **Reranking 404** - Utilisait ollama.Client() avec modèle Gemini
 5. **Gemini SDK manquant** - google-genai non installé dans venv
+6. **Réponse agent vide** - Le générateur `run_streaming()` n'était pas correctement consommé, puis `run()` était appelé une seconde fois inutilement. Fix: capture du retour via `StopIteration.value`
 
 ## Améliorations futures
 

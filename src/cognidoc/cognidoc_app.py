@@ -522,29 +522,36 @@ def chat_conversation(
                     # Run agent with streaming feedback
                     history.append({"role": "assistant", "content": ""})
 
-                    # Stream agent progress
-                    for state, message in agent.run_streaming(user_message, complexity):
-                        if state == AgentState.FINISHED:
-                            # Final answer will come from result
-                            pass
-                        elif state == AgentState.NEEDS_CLARIFICATION:
-                            # Agent needs clarification - use language-appropriate prefix
-                            prefix = get_clarification_prefix(query_lang)
-                            history[-1]["content"] = f"{prefix} {message}"
-                            yield convert_history_to_tuples(history)
-                            return
-                        elif state == AgentState.ERROR:
-                            logger.error(f"Agent error: {message}")
-                            # Fall through to standard path
-                            break
-                        else:
-                            # Progress update (optional: could show in UI)
-                            logger.debug(f"Agent [{state.value}]: {message[:100]}")
+                    # Stream agent progress and capture result
+                    # Note: run_streaming is a generator that returns AgentResult
+                    # We need to capture the return value via StopIteration.value
+                    result = None
+                    streaming_gen = agent.run_streaming(user_message, complexity)
 
-                    # Get final result
-                    result = agent.run(user_message, complexity)
+                    try:
+                        while True:
+                            state, message = next(streaming_gen)
+                            if state == AgentState.FINISHED:
+                                # Final answer will come from result
+                                pass
+                            elif state == AgentState.NEEDS_CLARIFICATION:
+                                # Agent needs clarification - use language-appropriate prefix
+                                prefix = get_clarification_prefix(query_lang)
+                                history[-1]["content"] = f"{prefix} {message}"
+                                yield convert_history_to_tuples(history)
+                                return
+                            elif state == AgentState.ERROR:
+                                logger.error(f"Agent error: {message}")
+                                # Fall through to standard path
+                                break
+                            else:
+                                # Progress update (optional: could show in UI)
+                                logger.debug(f"Agent [{state.value}]: {message[:100]}")
+                    except StopIteration as e:
+                        # Generator returned - capture the AgentResult
+                        result = e.value
 
-                    if result.success:
+                    if result and result.success:
                         t_end = time.perf_counter()
                         total_time = t_end - t0
 
@@ -563,6 +570,10 @@ def chat_conversation(
 
                         yield convert_history_to_tuples(history)
                         return
+                    else:
+                        # Agent didn't return successful result - fall through to standard path
+                        logger.warning(f"Agent returned no result or failed, falling back to standard path")
+                        history.pop()
 
                 except Exception as e:
                     logger.error(f"Agent execution failed: {e}, falling back to standard path")
