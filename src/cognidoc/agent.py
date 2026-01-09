@@ -116,89 +116,71 @@ class AgentResult:
 # ReAct Prompts
 # =============================================================================
 
-SYSTEM_PROMPT = """You are an intelligent research assistant that answers questions by gathering information step by step.
+SYSTEM_PROMPT = """You are an efficient research assistant. Your goal is to answer questions QUICKLY with MINIMAL steps.
 
-You have access to these tools:
+## Tools Available
 {tool_descriptions}
 
 ## Language Rules
 - ALWAYS respond in the SAME LANGUAGE as the user's question.
 - If the user asks in French, your final_answer MUST be in French.
 - If the user asks in English, your final_answer MUST be in English.
-- Your THOUGHT can be in any language, but the final_answer must match the user's language.
-- If you cannot understand the language, say so in English and ask for clarification.
 
-## Instructions
-
-1. For each step, you must output your reasoning in this EXACT format:
+## Response Format
+For each step, output EXACTLY:
 ```
-THOUGHT: <your reasoning about what to do next>
+THOUGHT: <brief reasoning>
 ACTION: <tool_name>
-ARGUMENTS: <valid JSON object with the tool's parameters>
+ARGUMENTS: <JSON object>
 ```
 
-2. After receiving an observation, reflect on whether you have enough information.
+## Efficiency Guidelines - CRITICAL
+1. **One retrieval is usually enough.** After ONE successful retrieve_vector or retrieve_graph call, you likely have enough information. Proceed to final_answer.
+2. **Skip synthesis for simple questions.** Use final_answer directly after getting relevant documents.
+3. **Use database_stats ONLY for meta-questions** about the database itself (document count, listing documents, etc.).
+4. **Avoid redundant lookups.** If retrieve_vector gave you info, don't also call retrieve_graph for the same question.
+5. **Target: 2-3 steps max for most queries.** Complex comparisons may need 4 steps.
 
-3. When you have gathered enough information, use the `final_answer` tool to provide your complete answer.
-   IMPORTANT: You MUST provide the answer in the ARGUMENTS, like this:
-   ```
-   THOUGHT: I have enough information to answer.
-   ACTION: final_answer
-   ARGUMENTS: {{"answer": "Your complete answer here in the user's language"}}
-   ```
+## When to use each tool
+- `database_stats`: ONLY for "how many documents?", "list documents", etc.
+- `retrieve_vector`: Factual questions about document content
+- `retrieve_graph`: Questions about relationships between entities
+- `lookup_entity`: Only if you need detailed info about ONE specific entity
+- `compare_entities`: Only for explicit comparison questions
+- `synthesize`: Only for multi-part questions requiring integration
+- `final_answer`: Use as soon as you have sufficient information!
 
-4. If the query is ambiguous, use `ask_clarification` to request more information.
+## Final Answer Format
+```
+THOUGHT: I have enough information.
+ACTION: final_answer
+ARGUMENTS: {{"answer": "Your complete answer in the user's language"}}
+```
 
-## Important Rules
-- Always think before acting
-- Use retrieve_vector for factual lookups
-- Use retrieve_graph for relationship questions
-- Use lookup_entity when you need details about a specific entity
-- Use compare_entities for comparative questions
-- Use synthesize to combine information before final answer
-- Use verify_claim to fact-check important statements
-- Use database_stats for questions about the database itself (document count, size, etc.)
-- Maximum {max_steps} steps allowed
+Maximum {max_steps} steps. Aim for 2-3.
 """
 
-THINK_PROMPT = """Current query: {query}
+THINK_PROMPT = """Query: {query}
 
 {history}
 
-Based on the above, what should be the next step? Think carefully about:
-1. What information do we still need?
-2. Which tool would be most helpful?
-3. Are we ready to provide a final answer?
+What's the MOST EFFICIENT next action? If you already have relevant information, use final_answer immediately.
 
-Respond with:
-THOUGHT: <your reasoning>
-ACTION: <tool_name>
-ARGUMENTS: <json arguments>"""
+THOUGHT:
+ACTION:
+ARGUMENTS:"""
 
 REFLECT_PROMPT = """Query: {query}
 
-Steps taken:
-{history}
+Observation: {observation}
 
-Latest observation: {observation}
+Context gathered: {context}
 
-Gathered context so far:
-{context}
+Can you answer NOW? If yes, use final_answer immediately. Only continue searching if absolutely necessary.
 
-Reflect on the progress:
-1. Did the last action provide useful information?
-2. Do we have enough information to answer the query?
-3. What gaps remain?
-
-If ready to answer, respond with:
-THOUGHT: I have enough information to answer.
-ACTION: final_answer
-ARGUMENTS: {{"answer": "<your complete answer>"}}
-
-If more information is needed, respond with:
-THOUGHT: <what's still missing>
-ACTION: <next_tool>
-ARGUMENTS: <json arguments>"""
+THOUGHT:
+ACTION:
+ARGUMENTS:"""
 
 
 # =============================================================================
@@ -529,16 +511,19 @@ Provide the best possible answer with the available information. If some aspects
                 step_count += 1
                 step = AgentStep(step_number=step_count)
 
-                # 1. THINK
-                yield (AgentState.THINKING, f"Step {step_count}: Analyzing...")
+                # 1. THINK - Show that we're analyzing
+                yield (AgentState.THINKING, f"[Step {step_count}/{self.max_steps}] Analyzing query...")
 
                 thought, action = self._think_and_decide(context)
                 step.thought = thought
 
                 if action is None:
+                    yield (AgentState.THINKING, "No action decided, finishing...")
                     break
 
-                yield (AgentState.THINKING, f"Thought: {thought[:100]}...")
+                # Show the thought process (truncated for readability)
+                thought_preview = thought[:150].replace('\n', ' ') if thought else "..."
+                yield (AgentState.THINKING, f"Thought: {thought_preview}")
 
                 # 2. Check terminal actions
                 if action.tool == ToolName.FINAL_ANSWER:
@@ -551,19 +536,22 @@ Provide the best possible answer with the available information. If some aspects
                                 answer = v
                                 break
                     step.observation = "Final answer provided"
+                    step.action = action
                     context.add_step(step)
 
-                    yield (AgentState.FINISHED, "Generating final answer...")
+                    yield (AgentState.FINISHED, "Preparing final answer...")
 
                     return AgentResult(
                         query=query,
                         answer=answer,
                         steps=context.steps,
                         success=True,
+                        metadata={"total_steps": step_count},
                     )
 
                 if action.tool == ToolName.ASK_CLARIFICATION:
                     question = action.arguments.get("question", "")
+                    step.action = action
                     context.add_step(step)
 
                     yield (AgentState.NEEDS_CLARIFICATION, question)
@@ -577,12 +565,16 @@ Provide the best possible answer with the available information. If some aspects
                         clarification_question=question,
                     )
 
-                # 3. ACT
-                yield (AgentState.ACTING, f"Using tool: {action.tool.value}")
+                # 3. ACT - Show which tool is being called
+                tool_args_preview = ", ".join(f"{k}={v}" for k, v in list(action.arguments.items())[:2])
+                yield (AgentState.ACTING, f"Calling {action.tool.value}({tool_args_preview[:50]})")
 
                 step.action = action
                 result = self.tools.execute(action)
                 step.observation = result.observation
+
+                # Show if result was cached
+                cached_indicator = " [cached]" if result.metadata.get("cached") else ""
 
                 # Store context
                 if result.success and result.data:
@@ -592,14 +584,19 @@ Provide the best possible answer with the available information. If some aspects
                     elif action.tool == ToolName.RETRIEVE_GRAPH:
                         context.add_context(result.data.get("context", ""))
 
-                yield (AgentState.OBSERVING, f"Observation: {step.observation[:100]}...")
+                # 4. OBSERVE - Show result summary
+                obs_preview = step.observation[:120].replace('\n', ' ') if step.observation else "No result"
+                yield (AgentState.OBSERVING, f"Result{cached_indicator}: {obs_preview}")
 
-                # 4. REFLECT
+                # 5. REFLECT
                 reflection = self._reflect(context, step.observation)
                 step.reflection = reflection
                 context.add_step(step)
 
-                yield (AgentState.REFLECTING, f"Reflection: {reflection[:100]}...")
+                # Show reflection (only if meaningful)
+                if reflection and len(reflection) > 10:
+                    refl_preview = reflection[:100].replace('\n', ' ')
+                    yield (AgentState.REFLECTING, f"Analysis: {refl_preview}")
 
             # Max steps - force conclusion
             yield (AgentState.FINISHED, "Reaching conclusion...")

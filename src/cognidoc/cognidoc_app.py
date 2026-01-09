@@ -532,13 +532,14 @@ def chat_conversation(
                     # We need to capture the return value via StopIteration.value
                     result = None
                     streaming_gen = agent.run_streaming(agent_query, complexity)
+                    progress_lines = []
 
                     try:
                         while True:
                             state, message = next(streaming_gen)
                             if state == AgentState.FINISHED:
                                 # Final answer will come from result
-                                pass
+                                progress_lines.append("*Finalizing answer...*")
                             elif state == AgentState.NEEDS_CLARIFICATION:
                                 # Agent needs clarification - use language-appropriate prefix
                                 prefix = get_clarification_prefix(query_lang)
@@ -550,7 +551,18 @@ def chat_conversation(
                                 # Fall through to standard path
                                 break
                             else:
-                                # Progress update (optional: could show in UI)
+                                # Progress update - show in UI
+                                state_emoji = {
+                                    AgentState.THINKING: "🤔",
+                                    AgentState.ACTING: "⚡",
+                                    AgentState.OBSERVING: "👁️",
+                                    AgentState.REFLECTING: "💭",
+                                }.get(state, "•")
+                                progress_lines.append(f"{state_emoji} {message}")
+                                # Show progress (last 5 lines) in UI
+                                progress_display = "\n".join(progress_lines[-5:])
+                                history[-1]["content"] = f"*Processing query...*\n\n{progress_display}"
+                                yield convert_history_to_tuples(history)
                                 logger.debug(f"Agent [{state.value}]: {message[:100]}")
                     except StopIteration as e:
                         # Generator returned - capture the AgentResult
