@@ -96,6 +96,7 @@ Documents → PDF Conversion → Images (600 DPI) → YOLO Detection
 | `src/cognidoc/complexity.py` | Query complexity evaluation for agentic routing |
 | `src/cognidoc/agent.py` | ReAct agent for complex multi-step queries |
 | `src/cognidoc/agent_tools.py` | Tool implementations for agent (9 tools) |
+| `src/cognidoc/helpers.py` | Query rewriting, parsing, conversation context |
 | `src/cognidoc/schema_wizard.py` | Interactive/auto schema generation for GraphRAG |
 | `src/cognidoc/constants.py` | Central config (paths, thresholds, model names) |
 | `src/cognidoc/utils/llm_client.py` | Singleton LLM client (Gemini default) |
@@ -121,10 +122,31 @@ Complex queries trigger the agent path (`complexity.py` evaluates this):
 
 Agent tools (`agent_tools.py`):
 - `retrieve_vector`, `retrieve_graph`, `lookup_entity`, `compare_entities`
-- `database_stats` - for meta-questions about the knowledge base
+- `database_stats(list_documents=True/False)` - stats and document listing
 - `synthesize`, `verify_claim`, `ask_clarification`, `final_answer`
 
+**Design choice**: Custom ReAct implementation (~300 lines) instead of LangGraph/LangChain for:
+- Fine-grained control over the reasoning loop
+- Easier debugging (no framework abstractions)
+- Minimal dependencies
+- Simple use case (single agent, 9 fixed tools)
+
 Language rules are enforced in prompts to ensure responses match query language (French/English).
+
+### Conversation Memory
+
+The chatbot maintains context across messages via query rewriting (`helpers.py`):
+
+```
+User: "Combien de documents?"  →  Agent answers "5 documents"
+User: "cite-les-moi"           →  Rewritten to "Cite-moi les 5 documents..."
+```
+
+Key functions:
+- `rewrite_query_with_history()` - Incorporates conversation context into the query
+- `parse_rewritten_query()` - Extracts bullet points from rewritten queries (handles `- ` and `* ` styles)
+
+The agent receives the **rewritten query** (not raw user message) to understand references like "them", "list them", etc.
 
 ## Configuration
 
