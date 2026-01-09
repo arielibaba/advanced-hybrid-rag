@@ -567,6 +567,72 @@ Pipeline complet exécuté avec succès :
 
 **Tests unitaires:** 127/127 passés
 
+## Améliorations implémentées (session 5)
+
+### 1. Fix comptage documents sources vs chunks (`agent_tools.py`)
+
+**Problème:** `DatabaseStatsTool` retournait 29 (chunks) au lieu de 2 (documents sources uniques).
+
+**Solution:** Extraction des noms de fichiers sources depuis les métadonnées de chaque chunk :
+
+```python
+def execute(self, list_documents: bool = False) -> ToolResult:
+    """Get database statistics.
+
+    Returns unique source document count (not chunk count).
+    - total_documents: Number of unique source files (PDFs)
+    - total_chunks: Number of chunks in the index
+    - document_names: List of unique source document names
+    """
+    # Extract unique source documents from ALL chunks
+    unique_sources = set()
+    for doc in docs:
+        source = doc.metadata.get('source', {})
+        if isinstance(source, dict):
+            name = source.get('document')
+        # ...
+
+    stats["total_documents"] = len(unique_sources)  # Sources uniques
+    stats["total_chunks"] = len(docs)               # Chunks
+```
+
+### 2. Patterns pour listage documents (`complexity.py`)
+
+Ajout de 12 nouveaux patterns pour détecter les questions de listage :
+
+```python
+DATABASE_META_PATTERNS = [
+    # ... existing patterns ...
+
+    # French patterns - listing documents (NEW)
+    r"\bliste[rz]?\b.*\bdoc",     # "liste les documents"
+    r"\bnoms?\b.*\bdoc",          # "noms des documents"
+    r"\bcite[rz]?\b.*\bdoc",      # "cite les documents"
+    r"\b[eé]num[eè]re[rz]?\b.*\bdoc",  # "énumère les documents"
+    r"\bquels?\b.*\bdoc",         # "quels documents"
+    r"\bdonne.*\bnoms?\b",        # "donne-moi les noms"
+
+    # English patterns - listing documents (NEW)
+    r"\blist\b.*\bdoc",           # "list the documents"
+    r"\bnames?\b.*\bdoc",         # "names of documents"
+    r"\bwhat\b.*\bdoc",           # "what documents"
+    r"\bwhich\b.*\bdoc",          # "which documents"
+]
+```
+
+### 3. Commits session 5
+
+| Hash | Description |
+|------|-------------|
+| `a4ee039` | Fix document count to return unique sources instead of chunks |
+
+### 4. Tests vérifiés
+
+```bash
+# 127 tests passent
+.venv/bin/python -m pytest tests/ -v
+```
+
 ## Améliorations futures
 
 1. **Support langues additionnelles** - Espagnol, Allemand, etc.
@@ -579,3 +645,4 @@ Pipeline complet exécuté avec succès :
 8. **YOLO batching** - Batch inference GPU pour détection
 9. **Entity extraction async** - Queue LLM avec workers
 10. **Pipeline streaming** - Démarrer chunking pendant extraction
+11. ~~**Fix document count vs chunk count**~~ ✅ Fait

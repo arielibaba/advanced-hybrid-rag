@@ -187,8 +187,13 @@ Complex queries trigger the agent path (`complexity.py` evaluates this):
 
 Agent tools (`agent_tools.py`):
 - `retrieve_vector`, `retrieve_graph`, `lookup_entity`, `compare_entities`
-- `database_stats(list_documents=True/False)` - stats and document listing
+- `database_stats(list_documents=True/False)` - returns unique source documents count (not chunks)
+  - `total_documents`: unique source files (PDFs)
+  - `total_chunks`: number of chunks in index
+  - `document_names`: list of source names (when `list_documents=True`)
 - `synthesize`, `verify_claim`, `ask_clarification`, `final_answer`
+
+**Document listing patterns** (`complexity.py`): Queries like "liste les documents", "quels documents", "list all docs" trigger agent path via `DATABASE_META_PATTERNS`.
 
 **Design choice**: Custom ReAct implementation (~300 lines) instead of LangGraph/LangChain for:
 - Fine-grained control over the reasoning loop
