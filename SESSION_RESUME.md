@@ -620,18 +620,36 @@ DATABASE_META_PATTERNS = [
 ]
 ```
 
-### 3. Commits session 5
+### 3. Réécriture README.md
+
+Le README a été entièrement réécrit pour plus de clarté :
+- Quick Start en premier (3 étapes simples)
+- Suppression des redondances
+- Diagrammes simplifiés
+- Enchaînement logique : installer → configurer → utiliser → comprendre
+- 426 lignes supprimées, 181 ajoutées
+
+### 4. Commits session 5
 
 | Hash | Description |
 |------|-------------|
 | `a4ee039` | Fix document count to return unique sources instead of chunks |
+| `65e1a61` | Update documentation with session 5 changes |
+| `2a1c93f` | Rewrite README.md for clarity and logical flow |
 
-### 4. Tests vérifiés
+### 5. Tests vérifiés
 
 ```bash
 # 127 tests passent
 .venv/bin/python -m pytest tests/ -v
 ```
+
+### 6. État final
+
+- **App:** Fonctionne correctement (testée avec questions sur documents)
+- **DatabaseStatsTool:** Retourne 2 documents sources (pas 29 chunks)
+- **Patterns listage:** 12 nouveaux patterns pour détecter "liste les docs", "quels documents", etc.
+- **Documentation:** README.md réécrit, SESSION_RESUME.md et CLAUDE.md mis à jour
 
 ## Améliorations futures
 
