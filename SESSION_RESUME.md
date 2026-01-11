@@ -651,6 +651,145 @@ Le README a été entièrement réécrit pour plus de clarté :
 - **Patterns listage:** 12 nouveaux patterns pour détecter "liste les docs", "quels documents", etc.
 - **Documentation:** README.md réécrit, SESSION_RESUME.md et CLAUDE.md mis à jour
 
+## Améliorations implémentées (session 6)
+
+### 1. Upgrade Gemini 2.0 → 2.5 Flash
+
+Remplacement du modèle LLM par défaut dans tout le codebase :
+
+```python
+# Avant
+DEFAULT_LLM_MODEL = "gemini-2.0-flash"
+
+# Après
+DEFAULT_LLM_MODEL = "gemini-2.5-flash"
+```
+
+**Fichiers modifiés (11):**
+- `src/cognidoc/constants.py`
+- `src/cognidoc/utils/llm_providers.py`
+- `src/cognidoc/utils/llm_client.py`
+- `src/cognidoc/api.py`
+- `.env`
+- `README.md`
+- `CLAUDE.md`
+- Et autres fichiers de configuration
+
+**Avantages Gemini 2.5 Flash:**
+- Meilleur raisonnement (thinking tokens)
+- Qualité similaire avec `thinking=0`
+- 20-30% moins de tokens utilisés
+
+### 2. YOLO Batching (`extract_objects_from_image.py`)
+
+Batch inference GPU pour améliorer l'utilisation mémoire sur M2/M3 :
+
+```python
+def process_images_batch(
+    self,
+    image_paths: List[Path]
+) -> List[Tuple[Path, np.ndarray, List[Dict], List[Dict]]]:
+    """Run batch inference on multiple images for improved GPU utilization."""
+    with timer(f"YOLO batch inference ({len(valid_paths)} images)"):
+        batch_results = self.model(
+            [str(p) for p in valid_paths],
+            conf=self.conf_threshold,
+            iou=self.iou_threshold,
+            verbose=False
+        )
+```
+
+**Nouveaux paramètres CLI:**
+```bash
+--yolo-batch-size 2      # Taille des batches (défaut: 2)
+--no-yolo-batching       # Désactiver le batching
+```
+
+**Gain estimé:** 15-30% sur M2 16GB (marginal car MPS, pas CUDA)
+
+### 3. Async Entity Extraction (`extract_entities.py`)
+
+Extraction parallèle des entités avec semaphore pour contrôle de concurrence :
+
+```python
+async def extract_from_chunks_dir_async(
+    chunks_dir: str = None,
+    config: Optional[GraphConfig] = None,
+    include_parent_chunks: bool = False,
+    max_concurrent: int = 4,
+    show_progress: bool = True,
+) -> List[ExtractionResult]:
+    """Async version with concurrent extraction using semaphore."""
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def process_chunk(chunk_file: Path) -> Optional[ExtractionResult]:
+        async with semaphore:
+            result = await extract_from_chunk_async(...)
+
+    tasks = [process_chunk(cf) for cf in chunk_files]
+    results_raw = await async_tqdm.gather(*tasks, desc="Entity extraction")
+```
+
+**Nouveaux paramètres CLI:**
+```bash
+--entity-max-concurrent 4   # Requêtes LLM simultanées (défaut: 4)
+--no-async-extraction       # Désactiver l'extraction async
+```
+
+**Gain estimé:** 2-4x speedup pour GraphRAG
+
+### 4. json_mode pour llm_chat_async (`utils/llm_client.py`)
+
+Support du mode JSON pour les réponses structurées :
+
+```python
+async def llm_chat_async(
+    messages: List[Dict[str, str]],
+    temperature: Optional[float] = None,
+    json_mode: bool = False,
+) -> str:
+```
+
+### 5. TOP_K_REFS Configuration (`constants.py`)
+
+Nouvelle constante pour afficher toutes les références :
+
+```python
+TOP_K_RETRIEVED_CHILDREN = int(os.getenv("TOP_K_RETRIEVED_CHILDREN", "10"))
+TOP_K_RERANKED_PARENTS = int(os.getenv("TOP_K_RERANKED_PARENTS", "5"))
+# Number of references to display (defaults to TOP_K_RERANKED_PARENTS)
+TOP_K_REFS = int(os.getenv("TOP_K_REFS", str(TOP_K_RERANKED_PARENTS)))
+```
+
+### 6. README pip install workflow
+
+Réécriture de la section "Getting Started" pour montrer pip install comme méthode principale :
+
+```bash
+# Installation via pip (pas besoin de cloner)
+pip install "cognidoc[all] @ git+https://github.com/arielibaba/cognidoc.git"
+
+# Créer un nouveau projet
+mkdir my-doc-assistant && cd my-doc-assistant
+mkdir -p data/sources
+```
+
+### 7. Commits session 6
+
+| Hash | Description |
+|------|-------------|
+| `9312a1e` | Add YOLO batching and async entity extraction for improved performance |
+| `a22ce32` | Add detailed usage instructions and fix TOP_K_REFS default |
+| `bd4d954` | Rewrite README.md for clarity and logical flow |
+
+### 8. Tests vérifiés
+
+```bash
+# Pipeline testé avec succès sur 1 page
+YOLO batching: 1 image en 1.17s ✅
+Entity extraction async: 2 chunks en parallèle ✅
+```
+
 ## Améliorations futures
 
 1. **Support langues additionnelles** - Espagnol, Allemand, etc.
@@ -660,7 +799,7 @@ Le README a été entièrement réécrit pour plus de clarté :
 5. ~~**Export métriques** - CSV/JSON pour analyse externe~~ ✅ Fait
 6. **Alerting** - Notifications si latence > seuil
 7. ~~**Parallélisation ingestion** - PDF→images, embeddings~~ ✅ Fait
-8. **YOLO batching** - Batch inference GPU pour détection
-9. **Entity extraction async** - Queue LLM avec workers
-10. **Pipeline streaming** - Démarrer chunking pendant extraction
+8. ~~**YOLO batching** - Batch inference GPU pour détection~~ ✅ Fait
+9. ~~**Entity extraction async** - Queue LLM avec workers~~ ✅ Fait
+10. **Pipeline streaming** - Démarrer chunking pendant extraction (risqué sur 16GB)
 11. ~~**Fix document count vs chunk count**~~ ✅ Fait

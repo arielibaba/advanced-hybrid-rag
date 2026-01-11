@@ -65,6 +65,15 @@ Resume from specific stage:
 --force-reembed       # Re-embed all (ignore cache)
 ```
 
+### Performance Tuning Flags (M2/M3 Macs)
+
+```bash
+--yolo-batch-size 2       # YOLO batch size (default: 2, increase for more VRAM)
+--no-yolo-batching        # Disable YOLO batching (sequential processing)
+--entity-max-concurrent 4 # Concurrent LLM calls for entity extraction (default: 4)
+--no-async-extraction     # Disable async entity extraction (sequential)
+```
+
 ## Architecture
 
 ### Ingestion Pipeline
@@ -171,6 +180,8 @@ Documents → PDF Conversion → Images (600 DPI) → YOLO Detection
 | `src/cognidoc/utils/metrics.py` | Performance metrics with SQLite storage |
 | `src/cognidoc/create_embeddings.py` | Batched async embedding generation |
 | `src/cognidoc/convert_pdf_to_image.py` | Parallel PDF to image conversion |
+| `src/cognidoc/extract_objects_from_image.py` | YOLO detection with batch inference |
+| `src/cognidoc/extract_entities.py` | Async entity/relationship extraction |
 
 ### Query Routing
 
@@ -255,7 +266,9 @@ Language rules are enforced in prompts to ensure responses match query language 
 | Stage | Module | Optimization |
 |-------|--------|--------------|
 | PDF→Images | `convert_pdf_to_image.py` | `ProcessPoolExecutor` (4 workers) |
+| YOLO Detection | `extract_objects_from_image.py` | Batch inference (batch_size=2) |
 | Embeddings | `create_embeddings.py` | Batched async with `httpx.AsyncClient` |
+| Entity Extraction | `extract_entities.py` | Async with semaphore (max_concurrent=4) |
 | Cache | `utils/embedding_cache.py` | SQLite persistent cache |
 
 ```python
@@ -269,7 +282,8 @@ create_embeddings(chunks_dir, embeddings_dir, batch_size=32, max_concurrent=4)
 **M2/M3 16GB Guidelines:**
 - `max_workers=4` for PDF conversion (avoids memory saturation)
 - `max_concurrent=4` for embeddings (overlaps network I/O)
-- YOLO/LLM extraction: sequential (GPU memory constraint)
+- `yolo_batch_size=2` for YOLO detection (batch inference)
+- `entity_max_concurrent=4` for async entity extraction
 
 **Tool Result Caching** (`agent_tools.py`):
 ```python
