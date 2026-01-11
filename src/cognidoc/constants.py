@@ -150,7 +150,8 @@ PARENT_DOCUMENTS_INDEX = "parent_documents"
 
 TOP_K_RETRIEVED_CHILDREN = int(os.getenv("TOP_K_RETRIEVED_CHILDREN", "10"))
 TOP_K_RERANKED_PARENTS = int(os.getenv("TOP_K_RERANKED_PARENTS", "5"))
-TOP_K_REFS = int(os.getenv("TOP_K_REFS", "3"))
+# Number of references to display (defaults to TOP_K_RERANKED_PARENTS to show all sources)
+TOP_K_REFS = int(os.getenv("TOP_K_REFS", str(TOP_K_RERANKED_PARENTS)))
 
 # Reranking toggle (can be overridden at runtime)
 ENABLE_RERANKING = os.getenv("ENABLE_RERANKING", "true").lower() == "true"

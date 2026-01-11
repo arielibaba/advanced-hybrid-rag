@@ -300,15 +300,165 @@ On first ingestion, an interactive wizard helps configure GraphRAG:
 
 ```
 your-project/
-├── documents/              # Your source files
-├── .env                    # API keys
-└── data/                   # Created automatically
+├── data/
+│   └── sources/            # Your source files (PDF, DOCX, PPTX, etc.)
+├── .env                    # API keys and configuration
+└── data/                   # Created automatically after ingestion
     ├── pdfs/               # Converted PDFs
-    ├── images/             # Page images
-    ├── chunks/             # Semantic chunks
+    ├── images/             # Page images (600 DPI)
+    ├── detections/         # YOLO-detected regions
+    ├── processed/          # Extracted text/tables
+    ├── chunks/             # Semantic chunks (parent + child)
     ├── indexes/            # Search indexes
     ├── vector_store/       # Qdrant database
-    └── cache/              # SQLite caches
+    ├── cache/              # SQLite caches (embeddings, tools)
+    └── graphs/             # Knowledge graph
+```
+
+---
+
+## Getting Started with a New Project
+
+### Step 1: Clone and Install
+
+```bash
+# Clone CogniDoc
+git clone https://github.com/arielibaba/cognidoc.git
+cd cognidoc
+
+# Install dependencies (use UV_LINK_MODE=copy if path contains spaces)
+UV_LINK_MODE=copy uv sync --all-extras
+```
+
+### Step 2: Configure Environment
+
+```bash
+# Copy the example configuration
+cp .env.example .env
+
+# Edit .env and add your API key
+# GOOGLE_API_KEY=your-gemini-api-key
+```
+
+### Step 3: Add Your Documents
+
+```bash
+# Create the sources directory
+mkdir -p data/sources
+
+# Copy your documents
+cp /path/to/your/documents/* data/sources/
+
+# Supported formats: PDF, DOCX, PPTX, XLSX, TXT, MD, images
+```
+
+### Step 4: Run Ingestion
+
+```bash
+# Full pipeline (first time)
+UV_LINK_MODE=copy uv run python -m cognidoc.run_ingestion_pipeline
+
+# Faster ingestion (skip GraphRAG)
+UV_LINK_MODE=copy uv run python -m cognidoc.run_ingestion_pipeline --skip-graph
+
+# Performance options for M2/M3 Macs
+UV_LINK_MODE=copy uv run python -m cognidoc.run_ingestion_pipeline \
+    --yolo-batch-size 2 \
+    --entity-max-concurrent 4
+```
+
+**Ingestion time estimates:**
+
+| Documents | Without GraphRAG | With GraphRAG |
+|-----------|------------------|---------------|
+| 5 pages | ~2 min | ~5 min |
+| 50 pages | ~10 min | ~30 min |
+| 500 pages | ~1h | ~3h |
+
+### Step 5: Launch Web Interface
+
+```bash
+# Start the chat interface
+UV_LINK_MODE=copy uv run python -m cognidoc.cognidoc_app
+
+# Options
+UV_LINK_MODE=copy uv run python -m cognidoc.cognidoc_app --no-rerank    # Faster responses
+UV_LINK_MODE=copy uv run python -m cognidoc.cognidoc_app --share        # Public link
+```
+
+Open http://localhost:7860 in your browser.
+
+### Step 6: Query via Python (Optional)
+
+```python
+from cognidoc import CogniDoc
+
+doc = CogniDoc(llm_provider="gemini", embedding_provider="ollama")
+doc.ingest(skip_schema_wizard=True)  # Use existing schema
+
+result = doc.query("What are the main topics?")
+print(result.answer)
+print(result.sources)  # List of source references
+```
+
+### Resume After Adding New Documents
+
+```bash
+# Re-run ingestion (only new documents will be processed)
+UV_LINK_MODE=copy uv run python -m cognidoc.run_ingestion_pipeline
+
+# Force re-embedding all documents
+UV_LINK_MODE=copy uv run python -m cognidoc.run_ingestion_pipeline --force-reembed
+
+# Skip specific stages to resume from a checkpoint
+UV_LINK_MODE=copy uv run python -m cognidoc.run_ingestion_pipeline \
+    --skip-conversion --skip-pdf --skip-yolo
+```
+
+---
+
+## Configuration Reference
+
+### Environment Variables (.env)
+
+```bash
+# LLM Configuration
+DEFAULT_LLM_PROVIDER=gemini           # gemini, ollama, openai, anthropic
+DEFAULT_LLM_MODEL=gemini-2.5-flash    # Model name
+LLM_TEMPERATURE=0.7                   # Generation temperature
+
+# Retrieval Configuration
+TOP_K_RETRIEVED_CHILDREN=10           # Documents retrieved per query
+TOP_K_RERANKED_PARENTS=5              # Documents after reranking
+TOP_K_REFS=5                          # References displayed (defaults to TOP_K_RERANKED_PARENTS)
+
+# Agent Configuration
+COMPLEXITY_THRESHOLD=0.55             # Score threshold for agent activation
+
+# YOLO Detection
+YOLO_CONFIDENCE_THRESHOLD=0.2         # Detection sensitivity
+```
+
+### CLI Options
+
+```bash
+# Ingestion pipeline
+--skip-conversion      # Skip non-PDF to PDF conversion
+--skip-pdf             # Skip PDF to image conversion
+--skip-yolo            # Skip YOLO detection
+--skip-extraction      # Skip text/table extraction
+--skip-descriptions    # Skip image descriptions
+--skip-chunking        # Skip semantic chunking
+--skip-embeddings      # Skip embedding generation
+--skip-indexing        # Skip vector index building
+--skip-graph           # Skip knowledge graph building
+--force-reembed        # Re-embed all documents
+
+# Performance tuning
+--yolo-batch-size N      # YOLO batch size (default: 2)
+--no-yolo-batching       # Disable YOLO batching
+--entity-max-concurrent N # Concurrent entity extractions (default: 4)
+--no-async-extraction    # Disable async extraction
 ```
 
 ---
