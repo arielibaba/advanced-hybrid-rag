@@ -856,7 +856,27 @@ def cognidoc_session():
     return _session_cognidoc
 ```
 
-### 6. Commits session 7
+### 6. Documentation API REST
+
+Ajout de la documentation pour intégrer CogniDoc depuis une autre application :
+
+```bash
+# Endpoint principal
+POST http://localhost:7860/api/submit_handler
+
+# Exemple curl
+curl -X POST http://localhost:7860/api/submit_handler \
+  -H "Content-Type: application/json" \
+  -d '{"data": ["Question?", [], true, true]}'
+```
+
+**Endpoints disponibles:**
+- `/api/submit_handler` - Poser une question
+- `/api/reset_conversation` - Réinitialiser la conversation
+- `/api/refresh_metrics` - Métriques de performance
+- `/api/export_csv` / `/api/export_json` - Export métriques
+
+### 7. Commits session 7
 
 | Hash | Description |
 |------|-------------|
@@ -864,8 +884,10 @@ def cognidoc_session():
 | `9d6aa5f` | Update documentation with session 7 E2E test suite |
 | `311f7c2` | Fix Qdrant lock conflict in tests |
 | `5e69771` | Update docs with renamed E2E test file |
+| `ba3738e` | Update documentation with Qdrant fix details |
+| `11373a7` | Add API Integration documentation to README |
 
-### 7. Tests vérifiés
+### 8. Tests vérifiés
 
 ```bash
 # Tous les tests passent maintenant ensemble
@@ -887,3 +909,4 @@ pytest tests/ -v
 10. **Pipeline streaming** - Démarrer chunking pendant extraction (risqué sur 16GB)
 11. ~~**Fix document count vs chunk count**~~ ✅ Fait
 12. ~~**Tests E2E réutilisables**~~ ✅ Fait
+13. ~~**Documentation API REST**~~ ✅ Fait

@@ -519,6 +519,7 @@ class CogniDocConfig:
 - [x] Ajouter exemples d'utilisation
 - [x] Documenter configuration
 - [x] **BONUS:** pip install workflow (pas besoin de cloner)
+- [x] **BONUS:** Documentation API REST pour intégration externe
 
 ### Étape 6: Tests et polish ✅ FAIT
 - [x] Tests unitaires providers (33 tests)

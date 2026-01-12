@@ -322,6 +322,26 @@ Key functions:
 
 The agent receives the **rewritten query** (not raw user message) to understand references like "them", "list them", etc.
 
+### REST API
+
+The Gradio app exposes REST endpoints for external integration:
+
+```bash
+# Main endpoint - ask a question
+POST http://localhost:7860/api/submit_handler
+Content-Type: application/json
+{"data": ["Your question?", [], true, true]}
+# Parameters: [user_msg, history, rerank, use_graph]
+
+# Other endpoints
+POST /api/reset_conversation    # Clear conversation
+POST /api/refresh_metrics       # Get performance stats
+POST /api/export_csv            # Export metrics CSV
+POST /api/export_json           # Export metrics JSON
+```
+
+See README.md "API Integration" section for detailed examples with curl, requests, and gradio_client.
+
 ## Configuration
 
 ### Key Constants (`src/constants.py`)
