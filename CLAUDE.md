@@ -38,15 +38,15 @@ print(result.answer)
 "
 
 # First-time setup (interactive wizard)
-python -m src.setup
+python -m cognidoc.setup
 
 # Run ingestion pipeline directly
-python -m src.run_ingestion_pipeline --vision-provider ollama
+python -m cognidoc.run_ingestion_pipeline --vision-provider ollama
 
 # Launch chat interface
-python -m src.cognidoc_app
-python -m src.cognidoc_app --no-rerank    # Faster, skip LLM reranking
-python -m src.cognidoc_app --share        # Create public link
+python -m cognidoc.cognidoc_app
+python -m cognidoc.cognidoc_app --no-rerank    # Faster, skip LLM reranking
+python -m cognidoc.cognidoc_app --share        # Create public link
 ```
 
 ### Pipeline Skip Flags
@@ -155,6 +155,13 @@ Documents → PDF Conversion → Images (600 DPI) → YOLO Detection
                                 │  as query)    │
                                 └───────────────┘
 ```
+
+### Source Layout
+
+Source code is in `src/cognidoc/` but installs as `cognidoc` package. When running modules:
+- File path: `src/cognidoc/cognidoc_app.py`
+- Module import: `from cognidoc import CogniDoc`
+- CLI execution: `python -m cognidoc.cognidoc_app`
 
 ### Key Modules
 
@@ -444,6 +451,15 @@ Key options:
 
 # Or with uv (if path has no spaces)
 uv run pytest tests/ -v
+
+# Run a single test file
+pytest tests/test_agent.py -v
+
+# Run a single test function
+pytest tests/test_agent.py::test_agent_tool_parsing -v
+
+# Run tests matching a pattern
+pytest tests/ -v -k "complexity"
 
 # Run E2E tests only (~30s)
 pytest tests/test_00_e2e_pipeline.py -v
