@@ -381,7 +381,7 @@ Key options:
 ## Tests
 
 ```bash
-# Run all unit tests (127 tests)
+# Run all tests (134 passed, 2 skipped)
 .venv/bin/python -m pytest tests/ -v
 
 # Or with uv (if path has no spaces)
@@ -396,10 +396,12 @@ pytest tests/test_00_e2e_pipeline.py -v --run-slow
 
 | Module | Tests | Description |
 |--------|-------|-------------|
+| `test_00_e2e_pipeline.py` | 9 | E2E pipeline (runs first to avoid Qdrant lock) |
 | `test_agent.py` | 27 | Agent ReAct loop |
 | `test_agent_tools.py` | 33 | Tool implementations |
 | `test_complexity.py` | 24 | Query complexity evaluation |
 | `test_e2e_language_and_count.py` | 10 | Language detection, document count |
-| `test_00_e2e_pipeline.py` | 9 | E2E pipeline (7 fast + 2 slow) |
 | `test_providers.py` | 33 | LLM/Embedding providers |
-| **Total** | **136** |
+| **Total** | **136** (134 passed, 2 skipped) |
+
+**Note:** E2E tests are named `test_00_*` to run first alphabetically. Qdrant embedded only allows one client per storage folder, so E2E tests must acquire the lock before other tests.

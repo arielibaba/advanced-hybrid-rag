@@ -835,18 +835,42 @@ Suppression des anciens fichiers de test :
 - `test_e2e/` directory
 - `test_e2e_script.py`
 
-### 5. Commits session 7
+### 5. Fix conflit Qdrant embedded
+
+**Problème:** Qdrant embedded n'autorise qu'un seul client par dossier. Quand tous les tests s'exécutaient ensemble, les tests E2E échouaient car un autre module verrouillait Qdrant.
+
+**Solution:**
+1. Renommé `test_e2e_pipeline.py` → `test_00_e2e_pipeline.py` (s'exécute en premier alphabétiquement)
+2. Ajouté fixture `cognidoc_session` session-scoped dans `conftest.py`
+3. Les tests E2E partagent une seule instance CogniDoc
+
+```python
+# conftest.py - Session-scoped fixture
+@pytest.fixture(scope="session")
+def cognidoc_session():
+    """Shared CogniDoc instance across ALL test modules."""
+    global _session_cognidoc
+    if _session_cognidoc is None:
+        from cognidoc import CogniDoc
+        _session_cognidoc = CogniDoc(...)
+    return _session_cognidoc
+```
+
+### 6. Commits session 7
 
 | Hash | Description |
 |------|-------------|
 | `3435f36` | Add proper pytest E2E test suite for future updates |
+| `9d6aa5f` | Update documentation with session 7 E2E test suite |
+| `311f7c2` | Fix Qdrant lock conflict in tests |
+| `5e69771` | Update docs with renamed E2E test file |
 
-### 6. Tests vérifiés
+### 7. Tests vérifiés
 
 ```bash
-# 9 tests E2E (7 passed, 2 skipped)
-pytest tests/test_00_e2e_pipeline.py -v
-# Temps: ~29 secondes
+# Tous les tests passent maintenant ensemble
+pytest tests/ -v
+# 134 passed, 2 skipped in ~27s
 ```
 
 ## Améliorations futures
