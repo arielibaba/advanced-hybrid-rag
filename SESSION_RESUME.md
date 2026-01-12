@@ -1045,6 +1045,9 @@ Toggle dans le header pour basculer entre mode clair et sombre :
 | `6b10105` | Make MEMORY_WINDOW dynamic based on LLM context_window |
 | `72e852e` | Update documentation with ES/DE, MODEL_SPECS, MEMORY_WINDOW |
 | `e765f00` | Add dark mode toggle to web interface |
+| `07a498f` | Update documentation with dark mode feature |
+| `4be2600` | Update CLAUDE.md and IMPLEMENTATION_PLAN.md with dark mode |
+| `7a55da3` | Fix dark mode toggle for Gradio compatibility |
 
 ## Améliorations futures
 
