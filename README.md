@@ -28,7 +28,7 @@ GEMINI_API_KEY=your-key    # Recommended (free tier available)
 from cognidoc import CogniDoc
 
 doc = CogniDoc()
-doc.ingest("./documents/")  # Your PDF, DOCX, PPTX files
+doc.ingest("./data/sources/")  # Your PDF, DOCX, PPTX files
 doc.launch_ui(port=7860)    # Open http://localhost:7860
 ```
 
@@ -95,7 +95,7 @@ doc = CogniDoc(
 )
 
 # Ingest documents (first time only)
-doc.ingest("./documents/")
+doc.ingest("./data/sources/")
 
 # Query
 result = doc.query("What are the main topics?")
@@ -113,7 +113,7 @@ python -m cognidoc.setup
 
 # Or use individual commands:
 cognidoc init --schema --prompts    # Copy templates only (non-interactive)
-cognidoc ingest ./documents --llm gemini --embedding ollama
+cognidoc ingest ./data/sources --llm gemini --embedding ollama
 cognidoc query "Summarize the key findings"
 cognidoc serve --port 7860 --share
 cognidoc info                       # Show current configuration

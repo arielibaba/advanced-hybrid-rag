@@ -40,7 +40,7 @@ python -m cognidoc.setup
 
 ```bash
 cognidoc init --schema --prompts   # Copy templates (non-interactive)
-cognidoc ingest ./docs --llm gemini --embedding ollama
+cognidoc ingest ./data/sources --llm gemini --embedding ollama
 cognidoc query "What is X?"
 cognidoc serve --port 7860 --share
 cognidoc info                      # Show configuration
