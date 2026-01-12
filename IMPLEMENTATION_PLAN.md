@@ -600,6 +600,7 @@ Toutes les étapes du plan ont été implémentées avec succès. Le package Cog
 - **Suite E2E réutilisable** pour validation des futures mises à jour
 - **MODEL_SPECS** avec paramètres officiels par provider
 - **MEMORY_WINDOW dynamique** basé sur le context_window du LLM
+- **Dark mode** avec toggle et persistance localStorage
 
 ### Optimisations ajoutées (au-delà du plan initial)
 
@@ -614,3 +615,4 @@ Toutes les étapes du plan ont été implémentées avec succès. Le package Cog
 | MODEL_SPECS | `constants.py` | Paramètres officiels |
 | Dynamic MEMORY_WINDOW | `helpers.py` | Mémoire adaptative |
 | Multi-language ES/DE | `cognidoc_app.py`, `complexity.py` | Support 4 langues |
+| Dark mode | `cognidoc_app.py` | UX améliorée |

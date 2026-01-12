@@ -302,6 +302,12 @@ class ToolCache:
 - Cache hits marked with `[cached]` indicator
 - Real-time updates via Gradio yield
 
+**Dark Mode** (`cognidoc_app.py`):
+- Toggle button in header (🌙/☀️)
+- Auto-detects system preference on first load
+- Persists user choice in localStorage
+- Comprehensive CSS variables for all UI elements
+
 **Optimized Prompts** (`agent.py`):
 - SYSTEM_PROMPT emphasizes efficiency: "Target 2-3 steps max"
 - THINK_PROMPT encourages immediate action
