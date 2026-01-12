@@ -792,7 +792,7 @@ Entity extraction async: 2 chunks en parallèle ✅
 
 ## Améliorations implémentées (session 7)
 
-### 1. Suite de tests E2E pytest (`tests/test_e2e_pipeline.py`)
+### 1. Suite de tests E2E pytest (`tests/test_00_e2e_pipeline.py`)
 
 Création d'une suite de tests E2E réutilisable pour les futures mises à jour :
 
@@ -807,10 +807,10 @@ class TestE2EEdgeCases:           # Cas limites et gestion d'erreurs
 **Commandes:**
 ```bash
 # Tests rapides E2E (~30s)
-pytest tests/test_e2e_pipeline.py -v
+pytest tests/test_00_e2e_pipeline.py -v
 
 # Tests complets avec ingestion (~2-5 min)
-pytest tests/test_e2e_pipeline.py -v --run-slow
+pytest tests/test_00_e2e_pipeline.py -v --run-slow
 ```
 
 ### 2. Configuration pytest (`tests/conftest.py`)
@@ -845,7 +845,7 @@ Suppression des anciens fichiers de test :
 
 ```bash
 # 9 tests E2E (7 passed, 2 skipped)
-pytest tests/test_e2e_pipeline.py -v
+pytest tests/test_00_e2e_pipeline.py -v
 # Temps: ~29 secondes
 ```
 

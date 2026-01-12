@@ -545,8 +545,8 @@ make lint      # Run pylint
 make test      # Run tests (136 tests)
 
 # E2E tests
-pytest tests/test_e2e_pipeline.py -v           # Fast (~30s)
-pytest tests/test_e2e_pipeline.py -v --run-slow  # Full pipeline (~2-5 min)
+pytest tests/test_00_e2e_pipeline.py -v           # Fast (~30s)
+pytest tests/test_00_e2e_pipeline.py -v --run-slow  # Full pipeline (~2-5 min)
 ```
 
 ---

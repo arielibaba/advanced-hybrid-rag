@@ -388,10 +388,10 @@ Key options:
 uv run pytest tests/ -v
 
 # Run E2E tests only (~30s)
-pytest tests/test_e2e_pipeline.py -v
+pytest tests/test_00_e2e_pipeline.py -v
 
 # Run full E2E with ingestion (~2-5 min)
-pytest tests/test_e2e_pipeline.py -v --run-slow
+pytest tests/test_00_e2e_pipeline.py -v --run-slow
 ```
 
 | Module | Tests | Description |
@@ -400,6 +400,6 @@ pytest tests/test_e2e_pipeline.py -v --run-slow
 | `test_agent_tools.py` | 33 | Tool implementations |
 | `test_complexity.py` | 24 | Query complexity evaluation |
 | `test_e2e_language_and_count.py` | 10 | Language detection, document count |
-| `test_e2e_pipeline.py` | 9 | E2E pipeline (7 fast + 2 slow) |
+| `test_00_e2e_pipeline.py` | 9 | E2E pipeline (7 fast + 2 slow) |
 | `test_providers.py` | 33 | LLM/Embedding providers |
 | **Total** | **136** |

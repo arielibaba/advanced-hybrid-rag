@@ -525,7 +525,7 @@ class CogniDocConfig:
 - [x] Tests intégration pipeline
 - [x] Cleanup et refactoring
 - [x] **136 tests passent** (dont 9 E2E)
-- [x] **BONUS:** Suite E2E pytest réutilisable (`tests/test_e2e_pipeline.py`)
+- [x] **BONUS:** Suite E2E pytest réutilisable (`tests/test_00_e2e_pipeline.py`)
 
 ## Exemples d'Utilisation Finale
 
