@@ -29,13 +29,13 @@ def test_document_path():
     return fixture_path
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def project_root():
     """Path to the project root directory."""
     return Path(__file__).parent.parent
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def existing_indexes_available(project_root):
     """Check if existing indexes are available for testing."""
     indexes_dir = project_root / "data" / "indexes"
@@ -48,10 +48,20 @@ def existing_indexes_available(project_root):
     return True
 
 
+@pytest.fixture
+def cognidoc_with_graph(cognidoc_session):
+    """
+    CogniDoc instance with graph enabled.
+
+    Uses session-scoped instance from conftest.py to avoid Qdrant lock conflicts.
+    """
+    return cognidoc_session
+
+
 class TestE2EQueryOnly:
     """Fast E2E tests using existing indexes (~10-30 seconds)."""
 
-    def test_query_on_existing_data(self, project_root, existing_indexes_available):
+    def test_query_on_existing_data(self, cognidoc_with_graph):
         """
         Test query on existing indexed data.
 
@@ -60,51 +70,23 @@ class TestE2EQueryOnly:
         2. Query routing works correctly
         3. Response generation works
         """
-        from cognidoc import CogniDoc
-
-        # Initialize CogniDoc with existing data
-        doc = CogniDoc(
-            llm_provider="gemini",
-            embedding_provider="ollama",
-            use_yolo=False,
-            use_graph=True,
-        )
-
         # Test a factual query
-        result = doc.query("Qu'est-ce que CogniDoc ?")
+        result = cognidoc_with_graph.query("Qu'est-ce que CogniDoc ?")
 
         assert result.answer is not None, "Should return an answer"
         assert len(result.answer) > 20, "Answer should be substantial"
 
-    def test_query_returns_content(self, project_root, existing_indexes_available):
+    def test_query_returns_content(self, cognidoc_with_graph):
         """Test that queries return meaningful content."""
-        from cognidoc import CogniDoc
-
-        doc = CogniDoc(
-            llm_provider="gemini",
-            embedding_provider="ollama",
-            use_yolo=False,
-            use_graph=True,
-        )
-
-        result = doc.query("Quels formats de documents sont supportés ?")
+        result = cognidoc_with_graph.query("Quels formats de documents sont supportés ?")
 
         assert result.answer is not None
         # Response should have content (either natural language or knowledge graph)
         assert len(result.answer) > 50, "Response should have substantial content"
 
-    def test_query_handles_english(self, project_root, existing_indexes_available):
+    def test_query_handles_english(self, cognidoc_with_graph):
         """Test that English queries work."""
-        from cognidoc import CogniDoc
-
-        doc = CogniDoc(
-            llm_provider="gemini",
-            embedding_provider="ollama",
-            use_yolo=False,
-            use_graph=True,
-        )
-
-        result = doc.query("What is CogniDoc?")
+        result = cognidoc_with_graph.query("What is CogniDoc?")
 
         assert result.answer is not None
         assert len(result.answer) > 20, "Should return a meaningful answer"
@@ -233,33 +215,15 @@ class TestE2EFullPipeline:
 class TestE2EEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_short_query(self, project_root, existing_indexes_available):
+    def test_short_query(self, cognidoc_with_graph):
         """Test handling of very short queries."""
-        from cognidoc import CogniDoc
-
-        doc = CogniDoc(
-            llm_provider="gemini",
-            embedding_provider="ollama",
-            use_yolo=False,
-            use_graph=False,
-        )
-
-        result = doc.query("CogniDoc?")
+        result = cognidoc_with_graph.query("CogniDoc?")
         assert result.answer is not None
 
-    def test_empty_results_handling(self, project_root, existing_indexes_available):
+    def test_empty_results_handling(self, cognidoc_with_graph):
         """Test handling of queries with unlikely matches."""
-        from cognidoc import CogniDoc
-
-        doc = CogniDoc(
-            llm_provider="gemini",
-            embedding_provider="ollama",
-            use_yolo=False,
-            use_graph=False,
-        )
-
         # Query about something not in the documents
-        result = doc.query("What is the recipe for chocolate cake?")
+        result = cognidoc_with_graph.query("What is the recipe for chocolate cake?")
 
         # Should still return a response (even if it says no info found)
         assert result.answer is not None
