@@ -69,10 +69,39 @@ warnings.filterwarnings("ignore")
 
 def detect_query_language(query: str) -> str:
     """
-    Simple heuristic to detect if query is in French or English.
-    Returns 'fr' for French, 'en' for English (default).
+    Heuristic to detect query language.
+    Returns 'es' for Spanish, 'de' for German, 'fr' for French, 'en' for English (default).
+
+    Detection uses indicator counting - highest count wins (threshold: 2+).
     """
-    # Common French words and patterns
+    # Spanish indicators
+    spanish_indicators = [
+        " es ", " son ", " que ", " qué ", " cómo ", " cuánto ", " cuántos ",
+        " dónde ", " quién ", " cuál ", " cuáles ", " por qué ", " para ",
+        " los ", " las ", " una ", " del ", " esta ", " este ", " estos ",
+        " tengo ", " tiene ", " tienen ", " puedo ", " puede ", " hay ",
+        " está ", " están ", "¿", " muy ", " también ", " pero ", " porque ",
+        " esto ", " eso ", " aquí ", " ahí ", " ahora ", " hacer ", " ser ",
+        " como ", " cuando ", " donde ", " quien ", " cual ",
+        "ícame ", "ácame ", "éame ", "íame ",  # imperative + pronoun (explícame, dígame)
+        "ámelo", "émelo", "ímelo",  # imperative + pronoun endings
+        " documentos ", " datos ", " lista ", " archivo ",  # common nouns
+    ]
+
+    # German indicators
+    german_indicators = [
+        " ist ", " sind ", " das ", " der ", " die ", " den ", " dem ",
+        " ein ", " eine ", " einer ", " und ", " oder ", " aber ", " nicht ",
+        " auch ", " sehr ", " wie ", " was ", " wer ", " wo ", " wann ",
+        " warum ", " welche ", " welcher ", " können ", " haben ", " werden ",
+        " gibt ", " muss ", " kann ", " soll ", " wird ", " habe ", " hat ",
+        "ß", "ä", "ö", "ü",
+        " auf ", " aus ", " bei ", " mit ", " nach ", " von ", " zu ",
+        " mir ", " dir ", " uns ", " euch ", " ihr ", " ihm ", " ihr ",
+        " dokumente ", " datenbank ",
+    ]
+
+    # French indicators
     french_indicators = [
         " est ", " sont ", " que ", " qui ", " dans ", " pour ", " avec ",
         " les ", " des ", " une ", " sur ", " pas ", " plus ", " cette ",
@@ -80,30 +109,54 @@ def detect_query_language(query: str) -> str:
         " pourquoi ", " combien ", " quand ", "qu'", "d'", "l'", "n'",
         "-tu ", "-vous ", "-moi ", "-elle ", "-il ", " je ", " tu ",
     ]
+
     query_lower = query.lower()
+
+    # Count indicators for each language
+    spanish_count = sum(1 for ind in spanish_indicators if ind in query_lower)
+    german_count = sum(1 for ind in german_indicators if ind in query_lower)
     french_count = sum(1 for ind in french_indicators if ind in query_lower)
 
-    # If 2+ French indicators, it's likely French
-    if french_count >= 2:
-        return "fr"
-    # Check for question marks with French question words
-    if any(q in query_lower for q in ["est-ce", "qu'est", "combien", "pourquoi", "comment"]):
-        return "fr"
+    # Boost counts for language-specific question patterns
+    spanish_questions = ["¿qué", "¿cómo", "¿cuánto", "¿dónde", "¿por qué", "¿cuál"]
+    german_questions = ["wie viele", "was ist", "wo ist", "warum", "welche"]
+    french_questions = ["est-ce", "qu'est", "combien", "pourquoi", "comment"]
+
+    if any(q in query_lower for q in spanish_questions):
+        spanish_count += 2
+    if any(q in query_lower for q in german_questions):
+        german_count += 2
+    if any(q in query_lower for q in french_questions):
+        french_count += 2
+
+    # Sort by count descending, return language with highest count if >= 2
+    counts = [('es', spanish_count), ('de', german_count), ('fr', french_count)]
+    counts.sort(key=lambda x: x[1], reverse=True)
+
+    if counts[0][1] >= 2:
+        return counts[0][0]
+
     return "en"
 
 
 def get_clarification_prefix(lang: str) -> str:
     """Get the clarification prefix in the appropriate language."""
-    if lang == "fr":
-        return "**Clarification requise :**"
-    return "**Clarification needed:**"
+    prefixes = {
+        "fr": "**Clarification requise :**",
+        "es": "**Se necesita aclaración:**",
+        "de": "**Klärung erforderlich:**",
+    }
+    return prefixes.get(lang, "**Clarification needed:**")
 
 
 def get_no_info_message(lang: str) -> str:
     """Get the 'no information available' message in the appropriate language."""
-    if lang == "fr":
-        return "Je n'ai pas trouvé d'informations pertinentes dans la base documentaire pour répondre à cette question."
-    return "I could not find relevant information in the document base to answer this question."
+    messages = {
+        "fr": "Je n'ai pas trouvé d'informations pertinentes dans la base documentaire pour répondre à cette question.",
+        "es": "No he encontrado información relevante en la base documental para responder a esta pregunta.",
+        "de": "Ich habe keine relevanten Informationen in der Dokumentenbasis gefunden, um diese Frage zu beantworten.",
+    }
+    return messages.get(lang, "I could not find relevant information in the document base to answer this question.")
 
 # Custom CSS for professional styling
 CUSTOM_CSS = """

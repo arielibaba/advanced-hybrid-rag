@@ -125,6 +125,8 @@ SYSTEM_PROMPT = """You are an efficient research assistant. Your goal is to answ
 - ALWAYS respond in the SAME LANGUAGE as the user's question.
 - If the user asks in French, your final_answer MUST be in French.
 - If the user asks in English, your final_answer MUST be in English.
+- If the user asks in Spanish, your final_answer MUST be in Spanish.
+- If the user asks in German, your final_answer MUST be in German.
 
 ## Response Format
 For each step, output EXACTLY:

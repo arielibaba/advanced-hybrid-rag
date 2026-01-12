@@ -895,9 +895,89 @@ pytest tests/ -v
 # 134 passed, 2 skipped in ~27s
 ```
 
+## Améliorations implémentées (session 8)
+
+### 1. Support multilingue ES/DE (`cognidoc_app.py`)
+
+Extension du support linguistique de FR/EN à FR/EN/ES/DE :
+
+```python
+def detect_query_language(query: str) -> str:
+    """
+    Heuristic to detect query language.
+    Returns 'es' for Spanish, 'de' for German, 'fr' for French, 'en' for English (default).
+    Detection uses indicator counting - highest count wins (threshold: 2+).
+    """
+    spanish_indicators = [...]  # ~50 indicateurs
+    german_indicators = [...]   # ~45 indicateurs
+    french_indicators = [...]   # ~30 indicateurs
+```
+
+**Messages localisés:**
+```python
+prefixes = {
+    "fr": "**Clarification requise :**",
+    "es": "**Se necesita aclaración:**",
+    "de": "**Klärung erforderlich:**",
+}
+
+messages = {
+    "fr": "Je n'ai pas trouvé d'informations pertinentes...",
+    "es": "No he encontrado información relevante en la base documental...",
+    "de": "Ich habe keine relevanten Informationen in der Dokumentenbasis gefunden...",
+}
+```
+
+### 2. DATABASE_META_PATTERNS ES/DE (`complexity.py`)
+
+Ajout de 34 nouveaux patterns pour l'espagnol et l'allemand :
+
+**Espagnol (17 patterns):**
+- `cuántos documentos`, `número de documentos`, `tamaño de la base`
+- `lista los documentos`, `qué documentos`, `cuáles documentos`
+
+**Allemand (17 patterns):**
+- `wie viele Dokumente`, `Anzahl der Dokumente`, `Größe der Datenbank`
+- `liste die Dokumente`, `welche Dokumente`, `zeige mir die Dokumente`
+
+### 3. Prompts multilingues
+
+Mise à jour de 4 fichiers de prompts avec règles ES/DE :
+- `system_prompt_generate_final_answer.md`
+- `user_prompt_generate_final_answer.md`
+- `system_prompt_rewrite_query.md`
+- `agent.py` SYSTEM_PROMPT
+
+### 4. Tests ES/DE (`test_e2e_language_and_count.py`)
+
+5 nouvelles classes de test (14 nouveaux tests) :
+- `TestSpanishLanguageDetection`
+- `TestGermanLanguageDetection`
+- `TestSpanishDatabaseMetaPatterns`
+- `TestGermanDatabaseMetaPatterns`
+- `TestLanguageAmbiguity`
+
+### 5. Fichiers modifiés
+
+| Fichier | Modifications |
+|---------|---------------|
+| `src/cognidoc/cognidoc_app.py` | `detect_query_language()`, `get_clarification_prefix()`, `get_no_info_message()` |
+| `src/cognidoc/complexity.py` | 34 nouveaux DATABASE_META_PATTERNS ES/DE |
+| `src/cognidoc/agent.py` | SYSTEM_PROMPT language rules ES/DE |
+| `src/cognidoc/prompts/*.md` | 3 fichiers avec règles ES/DE |
+| `tests/test_e2e_language_and_count.py` | 5 nouvelles classes de test |
+
+### 6. Tests vérifiés
+
+```bash
+# 148 tests passent (14 nouveaux tests ES/DE)
+pytest tests/ -v
+# 148 passed, 2 skipped in ~28s
+```
+
 ## Améliorations futures
 
-1. **Support langues additionnelles** - Espagnol, Allemand, etc.
+1. ~~**Support langues additionnelles** - Espagnol, Allemand, etc.~~ ✅ Fait
 2. ~~**Cache persistant** - Utiliser Redis ou SQLite pour le cache~~ ✅ Fait
 3. ~~**Métriques de performance** - Dashboard temps de réponse, cache hits~~ ✅ Fait
 4. **Tests de charge** - Benchmarks avec multiple requêtes simultanées

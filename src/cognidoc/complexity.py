@@ -143,6 +143,50 @@ DATABASE_META_PATTERNS = [
     r"\bquels?\b.*\bdoc",  # "quels documents", "quels sont les docs"
     r"\bdonne.*\bnoms?\b",  # "donne-moi les noms", "donne leurs noms"
 
+    # Spanish patterns - document count
+    r"\bcu[aá]ntos? doc",  # "cuántos documentos", "cuantos docs"
+    r"\bcu[aá]ntos?.{0,20}base\b",  # "cuántos hay en la base"
+    r"\bn[uú]mero de doc",  # "número de documentos"
+    r"\bbase.{0,15}contiene",  # "la base contiene"
+    r"\bbase.{0,15}tiene",  # "la base tiene"
+    r"\btama[ñn]o de (?:la |esta )?base\b",  # "tamaño de la base"
+    r"\bestad[ií]sticas?\b.*\bbase\b",  # "estadísticas de la base"
+    r"\besta base\b.*\bcu[aá]ntos?\b",  # "esta base...cuántos"
+    r"\bla base\b.*\bcu[aá]ntos?\b",  # "la base...cuántos"
+
+    # Spanish patterns - listing documents
+    r"\blista[r]?\b.*\bdoc",  # "lista los documentos", "listar docs"
+    r"\bnombres?\b.*\bdoc",  # "nombres de los documentos"
+    r"\bdoc.*\bnombres?\b",  # "documentos y sus nombres"
+    r"\bmenciona[r]?\b.*\bdoc",  # "menciona los documentos"
+    r"\benumera[r]?\b.*\bdoc",  # "enumera los documentos"
+    r"\bqu[eé] doc",  # "qué documentos hay"
+    r"\bcu[aá]les?\b.*\bdoc",  # "cuáles documentos"
+    r"\bdame.*\bnombres?\b",  # "dame los nombres"
+
+    # German patterns - document count
+    r"\bwie viele? doc",  # "wie viele Dokumente"
+    r"\bwie viele? dok",  # "wie viele Dokumente" (German spelling)
+    r"\bwie viele?.{0,20}(?:datenbank|basis)\b",  # "wie viele in der Datenbank"
+    r"\banzahl (?:der |von )?doc",  # "Anzahl der Dokumente"
+    r"\banzahl (?:der |von )?dok",  # "Anzahl der Dokumente"
+    r"\b(?:datenbank|basis).{0,15}enth[aä]lt",  # "die Datenbank enthält"
+    r"\b(?:datenbank|basis).{0,15}hat",  # "die Basis hat"
+    r"\bgr[oö][sß]e der (?:datenbank|basis)\b",  # "Größe der Datenbank"
+    r"\bstatistik(?:en)?\b.*\b(?:datenbank|basis)\b",  # "Statistiken der Datenbank"
+    r"\bdiese (?:datenbank|basis)\b.*\bwie viele?\b",  # "diese Datenbank...wie viele"
+
+    # German patterns - listing documents
+    r"\bliste[n]?\b.*\bdok",  # "liste die Dokumente", "listen"
+    r"\bnamen?\b.*\bdok",  # "Namen der Dokumente"
+    r"\bdok.*\bnamen?\b",  # "Dokumente und ihre Namen"
+    r"\bnenne[n]?\b.*\bdok",  # "nenne die Dokumente"
+    r"\baufz[aä]hl(?:en|e)?\b.*\bdok",  # "aufzählen die Dokumente"
+    r"\bwelche\b.*\bdok",  # "welche Dokumente"
+    r"\bwas f[uü]r\b.*\bdok",  # "was für Dokumente"
+    r"\bgib mir.*\bnamen?\b",  # "gib mir die Namen"
+    r"\bzeig(?:e|en)?\b.*\bdok",  # "zeige die Dokumente"
+
     # English patterns
     r"\bhow many doc",  # "how many documents/docs"
     r"\bdocument count\b",
@@ -159,9 +203,9 @@ DATABASE_META_PATTERNS = [
     r"\bwhat\b.*\bdoc",  # "what documents are there"
     r"\bwhich\b.*\bdoc",  # "which documents"
 
-    # Generic database meta patterns
-    r"\b(?:database|base)\b.*\b(?:size|taille|count|nombre)\b",
-    r"\b(?:count|nombre)\b.*\b(?:database|base)\b",
+    # Generic database meta patterns (all languages)
+    r"\b(?:database|base|datenbank|basis)\b.*\b(?:size|taille|tama[ñn]o|gr[oö][sß]e|count|nombre|n[uú]mero|anzahl)\b",
+    r"\b(?:count|nombre|n[uú]mero|anzahl)\b.*\b(?:database|base|datenbank|basis)\b",
 ]
 
 # Weights for complexity factors

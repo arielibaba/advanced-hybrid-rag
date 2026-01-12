@@ -10,6 +10,8 @@ Given a conversation context and a new user query, follow these steps:
 - ALWAYS keep the rewritten query in the SAME LANGUAGE as the original user query.
 - If the user asks in French, rewrite in French.
 - If the user asks in English, rewrite in English.
+- If the user asks in Spanish, rewrite in Spanish.
+- If the user asks in German, rewrite in German.
 - NEVER translate the query to another language.
 
 ### Examples:
