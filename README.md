@@ -237,6 +237,115 @@ The query rewriter automatically incorporates context, so "list them" becomes "L
 
 ---
 
+## API Integration
+
+CogniDoc exposes a REST API via Gradio for integration with other applications.
+
+### Main Endpoint
+
+```
+POST http://localhost:7860/api/submit_handler
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `user_msg` | string | The question to ask |
+| `history` | array | Conversation history (for context) |
+| `rerank` | boolean | Enable LLM reranking (default: true) |
+| `use_graph` | boolean | Use knowledge graph (default: true) |
+
+### Example with curl
+
+```bash
+curl -X POST http://localhost:7860/api/submit_handler \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": [
+      "What topics are covered?",
+      [],
+      true,
+      true
+    ]
+  }'
+```
+
+### Example with Python (requests)
+
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:7860/api/submit_handler",
+    json={
+        "data": [
+            "How many documents in the database?",  # user_msg
+            [],      # history (empty for first question)
+            True,    # rerank
+            True     # use_graph
+        ]
+    }
+)
+
+result = response.json()
+# result["data"][0] contains conversation history with response
+```
+
+### Example with Python (gradio_client)
+
+```python
+from gradio_client import Client
+
+client = Client("http://localhost:7860")
+
+# First question
+result = client.predict(
+    user_msg="How many documents?",
+    history=[],
+    rerank=True,
+    use_graph=True,
+    api_name="/submit_handler"
+)
+
+# Extract answer
+history = result[0]
+answer = history[-1]["content"][0]["text"]
+print(answer)
+
+# Follow-up question (with context)
+result2 = client.predict(
+    user_msg="List them",
+    history=history,  # Pass previous history
+    rerank=True,
+    use_graph=True,
+    api_name="/submit_handler"
+)
+```
+
+### Other Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/api/reset_conversation` | Reset conversation history |
+| `/api/refresh_metrics` | Get performance metrics |
+| `/api/export_csv` | Export metrics as CSV |
+| `/api/export_json` | Export metrics as JSON |
+
+### Response Format
+
+```json
+{
+  "data": [
+    [
+      {"role": "user", "content": [{"text": "Question", "type": "text"}]},
+      {"role": "assistant", "content": [{"text": "Answer...", "type": "text"}]}
+    ],
+    ""
+  ]
+}
+```
+
+---
+
 ## Performance
 
 ### Tool Result Caching
