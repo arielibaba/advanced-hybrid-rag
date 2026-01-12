@@ -1358,10 +1358,15 @@ def create_gradio_app(default_reranking: bool = True):
         </div>
         <script>
             // Dark mode toggle functionality
-            function toggleDarkMode() {
+            window.toggleDarkMode = function() {
                 const body = document.body;
                 const icon = document.getElementById('theme-icon');
                 const label = document.getElementById('theme-label');
+
+                if (!icon || !label) {
+                    console.error('Dark mode toggle elements not found');
+                    return;
+                }
 
                 body.classList.toggle('dark-mode');
                 const isDark = body.classList.contains('dark-mode');
@@ -1372,24 +1377,42 @@ def create_gradio_app(default_reranking: bool = True):
 
                 // Save preference
                 localStorage.setItem('cognidoc-dark-mode', isDark ? 'true' : 'false');
-            }
+
+                console.log('Dark mode toggled:', isDark);
+            };
 
             // Load saved preference on page load
-            (function() {
+            function initDarkMode() {
                 const savedPref = localStorage.getItem('cognidoc-dark-mode');
                 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
                 // Use saved preference, or fall back to system preference
                 const shouldBeDark = savedPref !== null ? savedPref === 'true' : prefersDark;
 
+                const icon = document.getElementById('theme-icon');
+                const label = document.getElementById('theme-label');
+
                 if (shouldBeDark) {
                     document.body.classList.add('dark-mode');
-                    const icon = document.getElementById('theme-icon');
-                    const label = document.getElementById('theme-label');
                     if (icon) icon.textContent = '☀️';
                     if (label) label.textContent = 'Light';
+                } else {
+                    document.body.classList.remove('dark-mode');
+                    if (icon) icon.textContent = '🌙';
+                    if (label) label.textContent = 'Dark';
                 }
-            })();
+
+                console.log('Dark mode initialized:', shouldBeDark);
+            }
+
+            // Run on DOMContentLoaded and also after a delay for Gradio
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initDarkMode);
+            } else {
+                initDarkMode();
+            }
+            // Also run after Gradio finishes rendering
+            setTimeout(initDarkMode, 500);
         </script>
         """)
 
