@@ -1196,6 +1196,31 @@ BASE_DIR = DATA_DIR  # Backward compatibility alias
 | `DATA_DIR` / `BASE_DIR` | Données utilisateur | Répertoire de travail (cwd) |
 | `COGNIDOC_DATA_DIR` | Override env var | Custom directory |
 
+### Corrections documentation supplémentaires
+
+**README.md:**
+- Structure projet: consolidé `data/` en un seul répertoire avec `sources/` à l'intérieur
+- Remplacé `./docs/` par `./data/sources/` (Schema Wizard section, CLI Options)
+- Remplacé `GEMINI_API_KEY` par `GOOGLE_API_KEY` (variable principale dans le code)
+- Supprimé `COMPLEXITY_THRESHOLD=0.55` (variable inexistante)
+
+**cli.py:**
+- Corrigé `COGNIDOC_LLM_PROVIDER` → `DEFAULT_LLM_PROVIDER` dans le template `.env`
+
+**CLAUDE.md:**
+- Corrigé `src/constants.py` → `src/cognidoc/constants.py`
+- Corrigé `src/prompts/` → `src/cognidoc/prompts/`
+- Ajouté section "Path Resolution" documentant `DATA_DIR`, `PACKAGE_DIR`, `BASE_DIR`
+
+### Commits session 10
+
+| Hash | Description |
+|------|-------------|
+| `316ae78` | Fix paths to use cwd instead of package installation directory |
+| `ffceb60` | Fix path inconsistencies in README.md |
+| `547588d` | Fix configuration inconsistencies in documentation and CLI |
+| `aaa22a5` | Update CLAUDE.md with correct paths and DATA_DIR documentation |
+
 ### Tests vérifiés
 
 ```bash
