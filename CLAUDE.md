@@ -378,7 +378,19 @@ See README.md "API Integration" section for detailed examples with curl, request
 
 ## Configuration
 
-### Key Constants (`src/constants.py`)
+### Path Resolution (`src/cognidoc/constants.py`)
+
+CogniDoc uses the **current working directory** for data paths:
+
+| Variable | Points to | Purpose |
+|----------|-----------|---------|
+| `DATA_DIR` | `Path.cwd()` | User data (configurable via `COGNIDOC_DATA_DIR`) |
+| `PACKAGE_DIR` | Package installation | Embedded resources (prompts) |
+| `BASE_DIR` | Alias for `DATA_DIR` | Backward compatibility |
+
+This allows CogniDoc to work correctly when installed as a package and used in a new project.
+
+### Key Constants (`src/cognidoc/constants.py`)
 
 All settings overridable via `.env`:
 - `YOLO_CONFIDENCE_THRESHOLD`: 0.2
@@ -388,7 +400,7 @@ All settings overridable via `.env`:
 - `TOP_K_RERANKED_PARENTS`: 5
 - `HYBRID_DENSE_WEIGHT`: 0.6 (dense vs BM25 balance)
 
-### MODEL_SPECS (`src/constants.py`)
+### MODEL_SPECS (`src/cognidoc/constants.py`)
 
 Official provider parameters for all supported models:
 
@@ -425,7 +437,7 @@ def get_memory_window() -> int:
 ### Other Config Files
 
 - `config/graph_schema.yaml` - Entity types, relationship types, routing strategy
-- `src/prompts/` - LLM prompt templates (markdown files)
+- `src/cognidoc/prompts/` - LLM prompt templates (markdown files)
 
 ## External Dependencies
 
