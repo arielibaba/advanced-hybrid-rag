@@ -15,37 +15,42 @@ load_dotenv(Path.cwd() / ".env")
 # This always points to the installed package location
 PACKAGE_DIR = Path(__file__).resolve().parent
 
-# Data directory - uses current working directory by default
+# Project directory - current working directory by default
+# Can be overridden via COGNIDOC_PROJECT_DIR environment variable
+_project_dir_env = os.getenv("COGNIDOC_PROJECT_DIR")
+PROJECT_DIR = Path(_project_dir_env) if _project_dir_env else Path.cwd()
+
+# Data directory - PROJECT_DIR/data by default
 # Can be overridden via COGNIDOC_DATA_DIR environment variable
+# If set, COGNIDOC_DATA_DIR should point to the data folder directly (containing sources/, pdfs/, etc.)
 _data_dir_env = os.getenv("COGNIDOC_DATA_DIR")
-DATA_DIR = Path(_data_dir_env) if _data_dir_env else Path.cwd()
+DATA_DIR = Path(_data_dir_env) if _data_dir_env else PROJECT_DIR / "data"
 
-# For backward compatibility, BASE_DIR is now an alias for DATA_DIR
-# WARNING: This now points to cwd, not the package installation directory
-BASE_DIR = DATA_DIR
+# For backward compatibility
+BASE_DIR = PROJECT_DIR
 
 # =============================================================================
-# Directory Paths
+# Directory Paths (relative to DATA_DIR)
 # =============================================================================
 
-SOURCES_DIR = BASE_DIR / "data/sources"  # Input: documents to process
-PDF_DIR = BASE_DIR / "data/pdfs"          # Output: PDFs (copied or converted)
-IMAGE_DIR = BASE_DIR / "data/images"
-DETECTION_DIR = BASE_DIR / "data/detections"
-PROCESSED_DIR = BASE_DIR / "data/processed"
-CHUNKS_DIR = BASE_DIR / "data/chunks"
-EMBEDDINGS_DIR = BASE_DIR / "data/embeddings"
-VECTOR_STORE_DIR = BASE_DIR / "data/vector_store"
-INDEX_DIR = BASE_DIR / "data/indexes"
-CACHE_DIR = BASE_DIR / "data/cache"
+SOURCES_DIR = DATA_DIR / "sources"        # Input: documents to process
+PDF_DIR = DATA_DIR / "pdfs"               # Output: PDFs (copied or converted)
+IMAGE_DIR = DATA_DIR / "images"
+DETECTION_DIR = DATA_DIR / "detections"
+PROCESSED_DIR = DATA_DIR / "processed"
+CHUNKS_DIR = DATA_DIR / "chunks"
+EMBEDDINGS_DIR = DATA_DIR / "embeddings"
+VECTOR_STORE_DIR = DATA_DIR / "vector_store"
+INDEX_DIR = DATA_DIR / "indexes"
+CACHE_DIR = DATA_DIR / "cache"
 TOOL_CACHE_DB = CACHE_DIR / "tool_cache.db"
 METRICS_DB = CACHE_DIR / "metrics.db"
 
 # =============================================================================
-# YOLO Model Configuration
+# YOLO Model Configuration (relative to PROJECT_DIR, not DATA_DIR)
 # =============================================================================
 
-YOLO_MODEL_PATH = BASE_DIR / "models/YOLOv11/yolov11x_best.pt"
+YOLO_MODEL_PATH = PROJECT_DIR / "models/YOLOv11/yolov11x_best.pt"
 YOLO_CONFIDENCE_THRESHOLD = 0.2
 YOLO_IOU_THRESHOLD = 0.8
 

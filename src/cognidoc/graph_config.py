@@ -12,12 +12,12 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from .constants import DATA_DIR
+from .constants import PROJECT_DIR
 from .utils.logger import logger
 
 
-# Default configuration file path (in current working directory)
-DEFAULT_CONFIG_PATH = DATA_DIR / "config/graph_schema.yaml"
+# Default configuration file path (in project directory, not data directory)
+DEFAULT_CONFIG_PATH = PROJECT_DIR / "config/graph_schema.yaml"
 
 
 @dataclass
