@@ -415,8 +415,8 @@ During ingestion, if no `config/graph_schema.yaml` exists, the Schema Wizard run
 ```
 
 **Options:**
-- `doc.ingest("./docs/")` - Schema Wizard runs if no schema exists
-- `doc.ingest("./docs/", skip_schema_wizard=True)` - Use existing schema
+- `doc.ingest("./data/sources/")` - Schema Wizard runs if no schema exists
+- `doc.ingest("./data/sources/", skip_schema_wizard=True)` - Use existing schema
 - `cognidoc init --schema` - Copy template schema (non-interactive)
 - Manual: Edit `config/graph_schema.yaml`
 
@@ -427,23 +427,22 @@ During ingestion, if no `config/graph_schema.yaml` exists, the Schema Wizard run
 ```
 your-project/
 ├── .env                    # API keys and configuration
-├── data/
-│   └── sources/            # Your source files (PDF, DOCX, PPTX, etc.)
 ├── models/                 # Optional: YOLO model for document detection
 │   └── YOLOv11/
 │       └── yolov11x_best.pt  # YOLOv11 trained model (~109 MB)
 ├── config/                 # Created after first ingestion
 │   └── graph_schema.yaml   # GraphRAG schema (auto-generated or manual)
-└── data/                   # Created automatically after ingestion
-    ├── pdfs/               # Converted PDFs
-    ├── images/             # Page images (600 DPI)
-    ├── detections/         # YOLO-detected regions
-    ├── processed/          # Extracted text/tables
-    ├── chunks/             # Semantic chunks (parent + child)
-    ├── indexes/            # Search indexes
-    ├── vector_store/       # Qdrant database
-    ├── cache/              # SQLite caches (embeddings, tools)
-    └── graphs/             # Knowledge graph
+└── data/
+    ├── sources/            # Your source files (PDF, DOCX, PPTX, etc.)
+    ├── pdfs/               # Converted PDFs (auto-generated)
+    ├── images/             # Page images 600 DPI (auto-generated)
+    ├── detections/         # YOLO-detected regions (auto-generated)
+    ├── processed/          # Extracted text/tables (auto-generated)
+    ├── chunks/             # Semantic chunks (auto-generated)
+    ├── indexes/            # Search indexes (auto-generated)
+    ├── vector_store/       # Qdrant database (auto-generated)
+    ├── cache/              # SQLite caches (auto-generated)
+    └── graphs/             # Knowledge graph (auto-generated)
 ```
 
 ---
@@ -613,7 +612,7 @@ doc.launch_ui(
 
 ```bash
 # cognidoc ingest options
-cognidoc ingest ./docs \
+cognidoc ingest ./data/sources \
     --llm gemini \
     --embedding ollama \
     --skip-graph \                # Skip GraphRAG
