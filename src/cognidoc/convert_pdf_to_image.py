@@ -22,8 +22,10 @@ PATH_SEPARATOR = "__"
 # Default DPI for image conversion (600 = high quality for OCR)
 DEFAULT_DPI = 600
 
-# Default number of parallel workers (good for M2 with 16GB)
-DEFAULT_MAX_WORKERS = 4
+# Default number of parallel workers
+# Reduced to 2 for memory safety - each worker can use 1-2GB for large PDFs
+# Increase to 4 only if you have 32GB+ RAM
+DEFAULT_MAX_WORKERS = 2
 
 
 @dataclass
@@ -60,9 +62,23 @@ def get_relative_path_prefix(pdf_path: Path, base_dir: Path) -> str:
         return pdf_path.stem
 
 
+def _get_pdf_page_count(pdf_path: Path) -> int:
+    """Get the number of pages in a PDF without loading all pages into memory."""
+    from pdf2image.pdf2image import pdfinfo_from_path
+
+    try:
+        info = pdfinfo_from_path(str(pdf_path))
+        return info.get("Pages", 0)
+    except Exception:
+        # Fallback: try loading first page to check if PDF is valid
+        return -1  # Unknown, will process page by page until error
+
+
 def _convert_single_pdf(args: Tuple[str, str, str, int]) -> ConversionResult:
     """
     Convert a single PDF to images (worker function for parallel processing).
+
+    Memory-optimized: converts one page at a time instead of loading all pages.
 
     Args:
         args: Tuple of (pdf_path, image_dir, prefix, dpi)
@@ -77,15 +93,39 @@ def _convert_single_pdf(args: Tuple[str, str, str, int]) -> ConversionResult:
     image_dir = Path(image_dir_str)
 
     try:
-        # Convert PDF to images
-        images = convert_from_path(pdf_path, dpi=dpi)
-        pages_converted = 0
+        # Get page count first (memory efficient)
+        page_count = _get_pdf_page_count(pdf_path)
 
-        # Save each page
-        for i, image in enumerate(images, start=1):
-            output_path = image_dir / f"{prefix}_page_{i}.png"
-            image.save(output_path, 'PNG')
-            pages_converted += 1
+        if page_count == -1:
+            # Fallback: try to convert and see how many pages we get
+            # This is less memory efficient but handles edge cases
+            images = convert_from_path(pdf_path, dpi=dpi)
+            for i, image in enumerate(images, start=1):
+                output_path = image_dir / f"{prefix}_page_{i}.png"
+                image.save(output_path, 'PNG')
+            return ConversionResult(
+                pdf_path=pdf_path_str,
+                success=True,
+                pages_converted=len(images),
+            )
+
+        # Convert page by page to minimize memory usage
+        # This is critical for large PDFs at high DPI
+        pages_converted = 0
+        for page_num in range(1, page_count + 1):
+            # Convert single page
+            images = convert_from_path(
+                pdf_path,
+                dpi=dpi,
+                first_page=page_num,
+                last_page=page_num,
+            )
+            if images:
+                output_path = image_dir / f"{prefix}_page_{page_num}.png"
+                images[0].save(output_path, 'PNG')
+                pages_converted += 1
+                # Explicitly free memory
+                del images
 
         return ConversionResult(
             pdf_path=pdf_path_str,
