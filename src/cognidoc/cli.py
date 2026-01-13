@@ -189,7 +189,7 @@ def _create_env_template(path: Path):
     template = """# CogniDoc Configuration
 
 # Provider selection
-COGNIDOC_LLM_PROVIDER=gemini
+DEFAULT_LLM_PROVIDER=gemini
 COGNIDOC_EMBEDDING_PROVIDER=ollama
 COGNIDOC_DATA_DIR=./data
 

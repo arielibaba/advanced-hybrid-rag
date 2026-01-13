@@ -17,7 +17,7 @@ pip install "cognidoc[all] @ git+https://github.com/arielibaba/cognidoc.git"
 Create a `.env` file with at least one API key:
 
 ```bash
-GEMINI_API_KEY=your-key    # Recommended (free tier available)
+GOOGLE_API_KEY=your-key    # Recommended for Gemini (free tier available)
 # or OPENAI_API_KEY=your-key
 # or ANTHROPIC_API_KEY=your-key
 ```
@@ -572,9 +572,6 @@ LLM_TEMPERATURE=0.7                   # Generation temperature
 TOP_K_RETRIEVED_CHILDREN=10           # Documents retrieved per query
 TOP_K_RERANKED_PARENTS=5              # Documents after reranking
 TOP_K_REFS=5                          # References displayed (defaults to TOP_K_RERANKED_PARENTS)
-
-# Agent Configuration
-COMPLEXITY_THRESHOLD=0.55             # Score threshold for agent activation
 
 # YOLO Detection
 YOLO_CONFIDENCE_THRESHOLD=0.2         # Detection sensitivity
