@@ -1151,3 +1151,54 @@ your-project/
 # 148 passed, 2 skipped in 29.33s
 pytest tests/ -v
 ```
+
+---
+
+## Session 10 - 13 janvier 2026
+
+### Problème corrigé : Paths pointant vers le package d'installation
+
+**Symptôme:** Lorsque CogniDoc est installé comme package (`pip install cognidoc`) et utilisé dans un nouveau projet, toutes les commandes (`cognidoc ingest`, `cognidoc serve`) pointaient vers les répertoires du package d'installation au lieu du répertoire de travail courant.
+
+**Cause racine:** Dans `constants.py`, la variable `BASE_DIR` utilisait `Path(__file__)` qui pointe vers le répertoire d'installation du package, pas vers `Path.cwd()`.
+
+### Modifications
+
+| Fichier | Changement |
+|---------|------------|
+| `constants.py` | `BASE_DIR` utilise maintenant `Path.cwd()` au lieu de `Path(__file__)` |
+| `constants.py` | `load_dotenv()` charge explicitement `.env` depuis `Path.cwd()` |
+| `constants.py` | Nouvelle variable `DATA_DIR` (remplace l'ancien `BASE_DIR`) |
+| `constants.py` | Support de `COGNIDOC_DATA_DIR` env var pour override |
+| `graph_config.py` | Import `DATA_DIR` au lieu de `BASE_DIR` |
+
+### Code avant/après
+
+**Avant (`constants.py`):**
+```python
+load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent  # Package install dir!
+```
+
+**Après (`constants.py`):**
+```python
+load_dotenv(Path.cwd() / ".env")  # Explicit cwd
+PACKAGE_DIR = Path(__file__).resolve().parent  # For prompts/templates
+DATA_DIR = Path(os.getenv("COGNIDOC_DATA_DIR")) if os.getenv("COGNIDOC_DATA_DIR") else Path.cwd()
+BASE_DIR = DATA_DIR  # Backward compatibility alias
+```
+
+### Architecture des paths
+
+| Variable | Utilisation | Pointe vers |
+|----------|-------------|-------------|
+| `PACKAGE_DIR` | Prompts, templates embarqués | Installation du package |
+| `DATA_DIR` / `BASE_DIR` | Données utilisateur | Répertoire de travail (cwd) |
+| `COGNIDOC_DATA_DIR` | Override env var | Custom directory |
+
+### Tests vérifiés
+
+```bash
+# 148 passed, 2 skipped in 31.76s
+pytest tests/ -v
+```

@@ -8,14 +8,21 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from current working directory
+load_dotenv(Path.cwd() / ".env")
 
-# Get the directory of the current file (constants.py)
-# After restructuring: src/cognidoc/constants.py -> project root is ../../
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-# Package directory for prompts and other package resources
+# Package directory for embedded resources (prompts, templates)
+# This always points to the installed package location
 PACKAGE_DIR = Path(__file__).resolve().parent
+
+# Data directory - uses current working directory by default
+# Can be overridden via COGNIDOC_DATA_DIR environment variable
+_data_dir_env = os.getenv("COGNIDOC_DATA_DIR")
+DATA_DIR = Path(_data_dir_env) if _data_dir_env else Path.cwd()
+
+# For backward compatibility, BASE_DIR is now an alias for DATA_DIR
+# WARNING: This now points to cwd, not the package installation directory
+BASE_DIR = DATA_DIR
 
 # =============================================================================
 # Directory Paths
