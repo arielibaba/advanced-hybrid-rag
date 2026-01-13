@@ -11,6 +11,7 @@ CogniDoc is a Hybrid RAG (Vector + GraphRAG) document assistant that converts mu
 - Multi-provider LLM support (Gemini default, Ollama, OpenAI, Anthropic)
 - Parent-child chunk hierarchy for context-aware retrieval
 - Custom semantic chunking with breakpoint detection
+- Custom ReAct agent (~300 lines) instead of LangGraph for fine-grained control
 
 ## Commands
 
@@ -23,10 +24,14 @@ make sync             # Sync environment with lock file
 UV_LINK_MODE=copy uv sync --all-extras
 UV_LINK_MODE=copy uv pip install -e ".[all,dev]"
 
-# Code quality
+# Code quality (note: targets root *.py, not src/)
 make format           # Format with black
 make lint             # Run pylint
 make refactor         # Format + lint
+
+# For src/ code, run directly:
+uv run black src/cognidoc/
+uv run pylint src/cognidoc/
 ```
 
 ### First-Time Setup
@@ -517,7 +522,7 @@ Key options:
 ## Tests
 
 ```bash
-# Run all tests (148 passed, 2 skipped)
+# Run all tests (note: make test is not configured, use pytest directly)
 .venv/bin/python -m pytest tests/ -v
 
 # Or with uv (if path has no spaces)
@@ -549,4 +554,7 @@ pytest tests/test_00_e2e_pipeline.py -v --run-slow
 | `test_providers.py` | 33 | LLM/Embedding providers |
 | **Total** | **150** (148 passed, 2 skipped) |
 
-**Note:** E2E tests are named `test_00_*` to run first alphabetically. Qdrant embedded only allows one client per storage folder, so E2E tests must acquire the lock before other tests.
+**Test Infrastructure:**
+- `conftest.py` provides session-scoped `cognidoc_session` fixture to avoid Qdrant lock conflicts
+- `--run-slow` flag enables slow E2E tests (registered via `pytest_addoption`)
+- E2E tests are named `test_00_*` to run first alphabetically (Qdrant embedded only allows one client per storage folder)
