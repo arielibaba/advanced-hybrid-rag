@@ -382,22 +382,25 @@ def process_source_documents(
     sources_dir: str,
     pdf_output_dir: str,
     image_output_dir: str = None,
+    source_files: List[str] = None,
 ) -> Dict[str, any]:
     """
-    Process all documents from sources directory.
+    Process documents from sources directory.
 
     This function:
-    1. Scans sources_dir recursively for all documents
-    2. Copies PDFs directly to pdf_output_dir
-    3. Copies images directly to image_output_dir (skips PDF conversion for efficiency)
-    4. Converts documents (Office, HTML, text) to PDF and saves in pdf_output_dir
-    5. Keeps original files in sources_dir (archive)
-    6. Skips processing if output file already exists
+    1. If source_files is provided, processes only those specific files
+    2. Otherwise, scans sources_dir recursively for all documents
+    3. Copies PDFs directly to pdf_output_dir
+    4. Copies images directly to image_output_dir (skips PDF conversion for efficiency)
+    5. Converts documents (Office, HTML, text) to PDF and saves in pdf_output_dir
+    6. Keeps original files in sources_dir (archive)
+    7. Skips processing if output file already exists
 
     Args:
         sources_dir: Directory containing source documents (input)
         pdf_output_dir: Directory to save PDFs (output)
         image_output_dir: Directory to save images directly (optional, uses pdf_output_dir if None)
+        source_files: Optional list of specific file paths to process (limits processing to these files only)
 
     Returns:
         Statistics dictionary with processing results
@@ -433,11 +436,16 @@ def process_source_documents(
         "failed": 0,
         "by_format": {},
         "errors": [],
+        "processed_pdf_stems": [],  # Track PDF file stems for pipeline filtering
     }
 
-    # Scan for files recursively
-    all_files = list(sources_path.rglob("*"))
-    logger.info(f"Scanning {sources_path} recursively, found {len(all_files)} items")
+    # Get files to process: either specific files or scan recursively
+    if source_files:
+        all_files = [Path(f) for f in source_files if Path(f).is_file()]
+        logger.info(f"Processing {len(all_files)} specific file(s)")
+    else:
+        all_files = list(sources_path.rglob("*"))
+        logger.info(f"Scanning {sources_path} recursively, found {len(all_files)} items")
 
     for file_path in all_files:
         if not file_path.is_file():
@@ -462,6 +470,8 @@ def process_source_documents(
             target_output_dir = pdf_output_path / relative_dir
             target_output_dir.mkdir(parents=True, exist_ok=True)
             target_pdf = target_output_dir / file_path.name
+            # Track this PDF for later pipeline stages
+            stats["processed_pdf_stems"].append(file_path.stem)
             if target_pdf.exists():
                 logger.debug(f"PDF already exists in output, skipping: {file_path.name}")
                 stats["skipped_existing"] += 1
@@ -534,6 +544,8 @@ def process_source_documents(
         if result:
             stats["converted"] += 1
             stats["by_format"][ext]["processed"] += 1
+            # Track the converted PDF stem for later pipeline stages
+            stats["processed_pdf_stems"].append(file_path.stem)
             logger.info(f"Successfully converted: {file_path.name} -> {result.name}")
         else:
             stats["failed"] += 1

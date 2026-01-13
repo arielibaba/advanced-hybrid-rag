@@ -313,7 +313,6 @@ class CogniDoc:
         """
         from .run_ingestion_pipeline import run_ingestion_pipeline_async
         from .constants import SOURCES_DIR
-        import shutil
 
         # Handle graph schema configuration
         actual_skip_graph = skip_graph or not self.config.use_graph
@@ -324,33 +323,29 @@ class CogniDoc:
                 actual_skip_graph = True
                 graph_config_path = None
 
-        # Copy source files to SOURCES_DIR if provided (skip if already in SOURCES_DIR)
+        # Collect source files to process (if specific sources provided)
+        source_files = None
         if source is not None:
             if isinstance(source, (str, Path)):
                 source = [str(source)]
             sources = [str(s) for s in source]
-            sources_dir_path = Path(SOURCES_DIR).resolve()
+            source_files = []
 
             for src_path in sources:
                 src = Path(src_path).resolve()
-                # Skip if file is already in SOURCES_DIR
-                if src.parent == sources_dir_path:
-                    logger.info(f"File {src.name} already in sources directory, skipping copy")
-                    continue
                 if src.is_file():
-                    dest = Path(SOURCES_DIR) / src.name
-                    logger.info(f"Copying {src} to {dest}")
-                    shutil.copy2(src, dest)
+                    source_files.append(str(src))
+                    logger.info(f"Will process file: {src}")
                 elif src.is_dir():
-                    for file in src.iterdir():
+                    # Add all files from directory
+                    for file in src.rglob("*"):
                         if file.is_file():
-                            file_resolved = file.resolve()
-                            # Skip if already in SOURCES_DIR
-                            if file_resolved.parent == sources_dir_path:
-                                continue
-                            dest = Path(SOURCES_DIR) / file.name
-                            logger.info(f"Copying {file} to {dest}")
-                            shutil.copy2(file, dest)
+                            source_files.append(str(file))
+                    logger.info(f"Will process {len(source_files)} file(s) from directory: {src}")
+
+            if not source_files:
+                logger.warning(f"No files found in specified source(s): {sources}")
+                source_files = None
 
         # Determine YOLO usage
         use_yolo = self._get_use_yolo() and not skip_yolo
@@ -376,6 +371,7 @@ class CogniDoc:
                 skip_indexing=skip_indexing,
                 skip_graph=actual_skip_graph,
                 graph_config_path=graph_config_path,
+                source_files=source_files,
             ))
 
             # Extract stats from pipeline result

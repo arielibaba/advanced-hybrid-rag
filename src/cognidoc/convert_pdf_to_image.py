@@ -108,6 +108,7 @@ def convert_pdf_to_image(
     dpi: int = DEFAULT_DPI,
     max_workers: int = DEFAULT_MAX_WORKERS,
     parallel: bool = True,
+    pdf_filter: Optional[List[str]] = None,
 ) -> Dict[str, int]:
     """
     Converts each page of every PDF file in the specified directory into separate image files.
@@ -122,6 +123,8 @@ def convert_pdf_to_image(
         dpi: Resolution for image conversion (default 600)
         max_workers: Number of parallel workers (default 4, good for M2 16GB)
         parallel: Whether to use parallel processing (default True)
+        pdf_filter: Optional list of PDF file stems (without extension) to process.
+                    If provided, only PDFs with matching stems will be converted.
 
     Returns:
         Statistics dictionary with counts
@@ -141,7 +144,15 @@ def convert_pdf_to_image(
     # Find all PDF files
     logger.info(f"Scanning for PDF files in: {pdf_dir}")
     pdf_files = list(pdf_dir.rglob('*.pdf'))
-    logger.info(f"Found {len(pdf_files)} PDF files")
+
+    # Filter by specific PDF names if provided
+    if pdf_filter:
+        pdf_filter_set = set(pdf_filter)
+        original_count = len(pdf_files)
+        pdf_files = [p for p in pdf_files if p.stem in pdf_filter_set]
+        logger.info(f"Filtered to {len(pdf_files)} PDF files (from {original_count}) matching filter")
+    else:
+        logger.info(f"Found {len(pdf_files)} PDF files")
 
     if not pdf_files:
         return {"total": 0, "success": 0, "failed": 0, "pages": 0}

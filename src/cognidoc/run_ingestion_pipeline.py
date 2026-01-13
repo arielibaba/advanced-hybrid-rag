@@ -196,6 +196,7 @@ async def run_ingestion_pipeline_async(
     use_yolo_batching: bool = True,
     entity_max_concurrent: int = 4,
     use_async_extraction: bool = True,
+    source_files: list = None,
 ) -> dict:
     """
     Run the full ingestion pipeline.
@@ -219,6 +220,7 @@ async def run_ingestion_pipeline_async(
         entity_max_concurrent: Max concurrent entity extractions (default: 4)
         use_async_extraction: Enable async entity extraction (default: True)
         graph_config_path: Path to custom graph configuration
+        source_files: Optional list of specific file paths to process (limits processing to these files only)
 
     Returns:
         Pipeline statistics
@@ -245,6 +247,9 @@ async def run_ingestion_pipeline_async(
     pipeline_timer.stage("clear_cache")
     clear_pytorch_cache()
 
+    # Track PDF stems for filtering in subsequent stages
+    pdf_filter = None
+
     # 2. Process source documents (copy PDFs, copy images, convert documents)
     if not skip_conversion:
         pipeline_timer.stage("document_conversion")
@@ -254,8 +259,13 @@ async def run_ingestion_pipeline_async(
                 sources_dir=SOURCES_DIR,
                 pdf_output_dir=PDF_DIR,
                 image_output_dir=IMAGE_DIR,  # Images go directly to images folder
+                source_files=source_files,  # Limit to specific files if provided
             )
             stats["document_conversion"] = conversion_stats
+            # If specific files were processed, use their stems as filter for PDF conversion
+            if source_files and conversion_stats.get("processed_pdf_stems"):
+                pdf_filter = conversion_stats["processed_pdf_stems"]
+                logger.info(f"Will filter PDF conversion to {len(pdf_filter)} file(s)")
             logger.info(
                 f"Document processing completed: {conversion_stats['pdfs_copied']} PDFs copied, "
                 f"{conversion_stats['images_copied']} images copied, "
@@ -275,7 +285,7 @@ async def run_ingestion_pipeline_async(
         pipeline_timer.stage("pdf_conversion")
         try:
             logger.info("Converting PDFs to images...")
-            convert_pdf_to_image(PDF_DIR, IMAGE_DIR)
+            convert_pdf_to_image(PDF_DIR, IMAGE_DIR, pdf_filter=pdf_filter)
             logger.info("PDF conversion completed")
         except Exception as e:
             logger.error(f"PDF conversion failed: {e}")
