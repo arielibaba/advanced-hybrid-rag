@@ -462,17 +462,24 @@ def extract_from_chunk(
 def extract_from_chunks_dir(
     chunks_dir: str = None,
     config: Optional[GraphConfig] = None,
-    include_parent_chunks: bool = False,
+    include_parent_chunks: bool = True,
+    include_child_chunks: bool = False,
+    include_descriptions: bool = True,
 ) -> List[ExtractionResult]:
     """
     Extract entities and relationships from all chunks in a directory.
 
     Uses the unified LLM client (Gemini by default).
 
+    By default, extracts from parent chunks (512 tokens) and descriptions,
+    skipping child chunks (64 tokens) to avoid redundant extractions.
+
     Args:
         chunks_dir: Directory containing chunk files
         config: Graph configuration
-        include_parent_chunks: Whether to process parent chunks (default: False)
+        include_parent_chunks: Whether to process parent chunks (default: True)
+        include_child_chunks: Whether to process child chunks (default: False)
+        include_descriptions: Whether to process description chunks (default: True)
 
     Returns:
         List of extraction results
@@ -488,10 +495,18 @@ def extract_from_chunks_dir(
     results = []
 
     for chunk_file in sorted(chunks_path.rglob("*.txt")):
-        # Skip parent chunks unless explicitly requested
-        if not include_parent_chunks:
-            if "_parent_chunk_" in chunk_file.name and "_child_chunk_" not in chunk_file.name:
-                continue
+        # Classify chunk type
+        is_parent_only = "_parent_chunk_" in chunk_file.name and "_child_chunk_" not in chunk_file.name
+        is_child = "_child_chunk_" in chunk_file.name
+        is_description = "_description" in chunk_file.name
+
+        # Apply filters
+        if is_parent_only and not include_parent_chunks:
+            continue
+        if is_child and not include_child_chunks:
+            continue
+        if is_description and not include_descriptions:
+            continue
 
         try:
             text = chunk_file.read_text(encoding="utf-8")
@@ -695,7 +710,9 @@ async def extract_from_chunk_async(
 async def extract_from_chunks_dir_async(
     chunks_dir: str = None,
     config: Optional[GraphConfig] = None,
-    include_parent_chunks: bool = False,
+    include_parent_chunks: bool = True,
+    include_child_chunks: bool = False,
+    include_descriptions: bool = True,
     max_concurrent: int = 4,
     show_progress: bool = True,
 ) -> List[ExtractionResult]:
@@ -706,10 +723,15 @@ async def extract_from_chunks_dir_async(
     the number of simultaneous LLM calls. This significantly improves
     throughput when using cloud LLM providers like Gemini.
 
+    By default, extracts from parent chunks (512 tokens) and descriptions,
+    skipping child chunks (64 tokens) to avoid redundant extractions.
+
     Args:
         chunks_dir: Directory containing chunk files
         config: Graph configuration
-        include_parent_chunks: Whether to process parent chunks (default: False)
+        include_parent_chunks: Whether to process parent chunks (default: True)
+        include_child_chunks: Whether to process child chunks (default: False)
+        include_descriptions: Whether to process description chunks (default: True)
         max_concurrent: Maximum number of concurrent extractions (default: 4)
                        Recommended: 4-6 for Gemini API, 1-2 for local Ollama
         show_progress: Show progress bar (default: True)
@@ -728,10 +750,18 @@ async def extract_from_chunks_dir_async(
     # Collect all chunk files to process
     chunk_files = []
     for chunk_file in sorted(chunks_path.rglob("*.txt")):
-        # Skip parent chunks unless explicitly requested
-        if not include_parent_chunks:
-            if "_parent_chunk_" in chunk_file.name and "_child_chunk_" not in chunk_file.name:
-                continue
+        # Classify chunk type
+        is_parent_only = "_parent_chunk_" in chunk_file.name and "_child_chunk_" not in chunk_file.name
+        is_child = "_child_chunk_" in chunk_file.name
+        is_description = "_description" in chunk_file.name
+
+        # Apply filters
+        if is_parent_only and not include_parent_chunks:
+            continue
+        if is_child and not include_child_chunks:
+            continue
+        if is_description and not include_descriptions:
+            continue
         chunk_files.append(chunk_file)
 
     if not chunk_files:
@@ -805,7 +835,9 @@ async def extract_from_chunks_dir_async(
 def run_extraction_async(
     chunks_dir: str = None,
     config: Optional[GraphConfig] = None,
-    include_parent_chunks: bool = False,
+    include_parent_chunks: bool = True,
+    include_child_chunks: bool = False,
+    include_descriptions: bool = True,
     max_concurrent: int = 4,
     show_progress: bool = True,
 ) -> List[ExtractionResult]:
@@ -815,10 +847,15 @@ def run_extraction_async(
     Convenience function that handles the async event loop setup,
     making it easy to call from synchronous code.
 
+    By default, extracts from parent chunks (512 tokens) and descriptions,
+    skipping child chunks (64 tokens) to avoid redundant extractions.
+
     Args:
         chunks_dir: Directory containing chunk files
         config: Graph configuration
-        include_parent_chunks: Whether to process parent chunks (default: False)
+        include_parent_chunks: Whether to process parent chunks (default: True)
+        include_child_chunks: Whether to process child chunks (default: False)
+        include_descriptions: Whether to process description chunks (default: True)
         max_concurrent: Maximum number of concurrent extractions (default: 4)
         show_progress: Show progress bar (default: True)
 
@@ -844,6 +881,8 @@ def run_extraction_async(
                     chunks_dir=chunks_dir,
                     config=config,
                     include_parent_chunks=include_parent_chunks,
+                    include_child_chunks=include_child_chunks,
+                    include_descriptions=include_descriptions,
                     max_concurrent=max_concurrent,
                     show_progress=show_progress,
                 )
@@ -856,6 +895,8 @@ def run_extraction_async(
                 chunks_dir=chunks_dir,
                 config=config,
                 include_parent_chunks=include_parent_chunks,
+                include_child_chunks=include_child_chunks,
+                include_descriptions=include_descriptions,
                 max_concurrent=max_concurrent,
                 show_progress=show_progress,
             )
