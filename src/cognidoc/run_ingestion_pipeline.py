@@ -705,12 +705,12 @@ async def run_ingestion_pipeline_async(
                 graph_config = get_graph_config()
 
             # Extract entities and relationships from chunks
+            # Default: extract from parent chunks (512 tokens) + descriptions, skip children (64 tokens)
             if use_async_extraction:
                 # Use async extraction for improved throughput with cloud LLM providers
                 extraction_results = run_extraction_async(
                     chunks_dir=CHUNKS_DIR,
                     config=graph_config,
-                    include_parent_chunks=False,
                     max_concurrent=entity_max_concurrent,
                     show_progress=True,
                 )
@@ -719,7 +719,6 @@ async def run_ingestion_pipeline_async(
                 extraction_results = extract_from_chunks_dir(
                     chunks_dir=CHUNKS_DIR,
                     config=graph_config,
-                    include_parent_chunks=False,
                 )
 
             total_entities = sum(len(r.entities) for r in extraction_results)
