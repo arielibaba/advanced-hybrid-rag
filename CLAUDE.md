@@ -446,12 +446,16 @@ create_embeddings(chunks_dir, embeddings_dir, batch_size=32, max_concurrent=4)
 | Parallel Retrieval | `hybrid_retriever.py` | Vector + Graph run concurrently via `ThreadPoolExecutor` |
 | Retrieval Cache | `hybrid_retriever.py` | LRU cache (50 entries, 5min TTL) for identical queries |
 | Lazy Graph Loading | `hybrid_retriever.py` | Graph loaded only on first graph query |
+| BM25 Lazy Loading | `hybrid_retriever.py` | BM25 index loaded only on first hybrid search |
 | Query Embedding Cache | `utils/rag_utils.py` | Avoids recomputing same query embedding |
+| Qdrant Result Cache | `utils/rag_utils.py` | LRU cache (50 entries, 5min TTL) for vector searches |
+| BM25 Tokenization Cache | `utils/advanced_rag.py` | LRU cache (1000 entries) for tokenized queries |
 | HNSW Index | `utils/rag_utils.py` | Faster approximate vector search (m=16, ef=100) |
 | HTTP Connection Pooling | `utils/embedding_providers.py` | Shared `httpx.AsyncClient` for Ollama embeddings |
 | Reranking Cache | `utils/advanced_rag.py` | LRU cache for cross-encoder results (5min TTL) |
+| Adaptive Reranker Batch | `utils/advanced_rag.py` | Batch size = min(configured, docs, cpu*2) |
 | Startup Warm-up | `cognidoc_app.py` | Pre-loads LLM, embeddings, retriever, reranker |
-| Streaming Progress | `cognidoc_app.py` | Shows "🔍 Searching..." during retrieval |
+| Streaming Progress | `cognidoc_app.py` | Shows "🔍 Searching (vector + graph)..." with mode |
 
 **Agent Optimizations:**
 
@@ -460,6 +464,7 @@ create_embeddings(chunks_dir, embeddings_dir, batch_size=32, max_concurrent=4)
 | Parallel Reflection | `agent.py` | Reflection runs in background thread via `ThreadPoolExecutor` |
 | Adaptive Concurrency | `extract_entities.py` | Auto-detects CPU cores (2-8 workers) |
 | Batch Entity Embeddings | `knowledge_graph.py` | Uses `embed_async()` for 5-10x faster ingestion |
+| Lazy Entity Embeddings | `knowledge_graph.py` | Computed on first semantic search, not during build |
 
 ```python
 # Retrieval cache API
@@ -477,6 +482,22 @@ stats = get_reranking_cache_stats()
 # {'size': 10, 'hits': 5, 'misses': 3, 'hit_rate': 0.625, 'ttl_seconds': 300}
 
 clear_reranking_cache()  # Clear cache manually
+
+# Qdrant result cache API
+from cognidoc.utils.rag_utils import _qdrant_result_cache
+
+stats = _qdrant_result_cache.stats()
+# {'size': 5, 'hits': 12, 'misses': 8, 'hit_rate': 0.6}
+
+_qdrant_result_cache.clear()  # Clear cache manually
+
+# BM25 tokenization cache (functools.lru_cache)
+from cognidoc.utils.advanced_rag import _cached_tokenize
+
+info = _cached_tokenize.cache_info()
+# CacheInfo(hits=10, misses=5, maxsize=1000, currsize=15)
+
+_cached_tokenize.cache_clear()  # Clear cache manually
 ```
 
 **Tool Result Caching** (`utils/tool_cache.py`):

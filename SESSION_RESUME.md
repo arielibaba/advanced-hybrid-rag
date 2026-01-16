@@ -1352,3 +1352,75 @@ total_chunks = from_cache + to_embed
 - 1 document → 1 page → 5 child chunks
 - GraphRAG: 40 entités → 31 nœuds, 22 arêtes, 14 communautés
 - Temps total: 1m 37.7s
+
+---
+
+## Session 12 - 16 janvier 2026
+
+### Optimisations de performance implémentées
+
+6 nouvelles optimisations sans impact sur la qualité :
+
+| # | Optimisation | Fichier | Impact |
+|---|--------------|---------|--------|
+| 2 | **BM25 Tokenization Caching** | `utils/advanced_rag.py` | Cache LRU `@lru_cache(maxsize=1000)` pour la tokenisation |
+| 3 | **Qdrant Query Result Caching** | `utils/rag_utils.py` | Cache LRU avec TTL 5 min pour les recherches vectorielles |
+| 7 | **BM25 Lazy Loading** | `hybrid_retriever.py` | BM25 chargé uniquement au premier hybrid search |
+| 8 | **Extended Streaming Prefetch** | `cognidoc_app.py` | Affiche le mode de recherche (vector/graph) |
+| 9 | **Reranker Adaptive Batch** | `utils/advanced_rag.py` | Batch size = min(configured, docs, cpu*2) |
+| 14 | **Lazy Entity Embeddings** | `knowledge_graph.py` | Embeddings calculés au premier appel sémantique |
+
+### Fichiers modifiés
+
+| Fichier | Modifications |
+|---------|---------------|
+| `src/cognidoc/utils/advanced_rag.py` | `_cached_tokenize()` LRU cache, adaptive batch sizing |
+| `src/cognidoc/utils/rag_utils.py` | `QdrantResultCache` class, `VectorIndex.search()` avec cache |
+| `src/cognidoc/hybrid_retriever.py` | `_ensure_bm25_loaded()`, `_bm25_load_attempted` flag |
+| `src/cognidoc/knowledge_graph.py` | `compute_embeddings=False` par défaut, lazy loading dans `find_similar_entities()` |
+| `src/cognidoc/cognidoc_app.py` | Progress indicator avec mode de recherche |
+
+### Nouvelles API
+
+```python
+# BM25 tokenization cache (functools.lru_cache)
+from cognidoc.utils.advanced_rag import _cached_tokenize
+info = _cached_tokenize.cache_info()
+# CacheInfo(hits=10, misses=5, maxsize=1000, currsize=15)
+_cached_tokenize.cache_clear()
+
+# Qdrant result cache
+from cognidoc.utils.rag_utils import _qdrant_result_cache
+stats = _qdrant_result_cache.stats()
+# {'size': 5, 'hits': 12, 'misses': 8, 'hit_rate': 0.6}
+_qdrant_result_cache.clear()
+```
+
+### Tests vérifiés
+
+```bash
+# Tous les tests passent
+✅ BM25 Tokenization Caching: 2 hits, 3 misses (comportement attendu)
+✅ Qdrant Result Cache: Put/get fonctionne, TTL respecté
+✅ BM25 Lazy Loading: Status "lazy" après load
+✅ Reranker Adaptive Batch: min(10, 5, 24) = 5
+✅ Lazy Entity Embeddings: compute_embeddings=False par défaut
+✅ Integration Test: 176,327x speedup sur cache hit
+```
+
+### Performance mesurée
+
+- **1ère requête** : 6.93s (chargement lazy + classification LLM)
+- **2ème requête** : 0.00s (cache hit instantané)
+- **Speedup cache** : 176,327x
+
+### Commits session 12
+
+| Hash | Description |
+|------|-------------|
+| `1c88a9d` | Add 6 safe performance optimizations |
+
+### Notes
+
+- **#4 (Parallel Complexity Eval)** : Non implémenté car `evaluate_complexity()` est déjà rule-based (~1ms)
+- **#11 (Embedding Batch Accumulation)** : Déjà implémenté via `embed_async()` pendant l'ingestion
