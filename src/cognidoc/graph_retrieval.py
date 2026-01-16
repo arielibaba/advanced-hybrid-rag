@@ -71,23 +71,18 @@ def extract_entities_from_query(
     query: str,
     kg: KnowledgeGraph,
     config: Optional[GraphConfig] = None,
-    use_semantic: bool = True,
-    semantic_threshold: float = 0.45,
 ) -> List[GraphNode]:
     """
     Extract entity mentions from query and match to graph nodes.
 
-    Uses a 3-stage matching approach:
+    Uses a 2-stage matching approach:
     1. Direct string matching (fastest)
-    2. Semantic similarity using pre-computed embeddings (fast, no LLM)
-    3. LLM extraction as fallback (slowest but most accurate)
+    2. LLM extraction (most accurate)
 
     Args:
         query: User query
         kg: Knowledge graph to search
         config: Graph configuration
-        use_semantic: Whether to use semantic matching (requires pre-computed embeddings)
-        semantic_threshold: Minimum similarity score for semantic matching
 
     Returns:
         List of matched GraphNode entities
@@ -107,19 +102,7 @@ def extract_entities_from_query(
     if matched_entities:
         return matched_entities
 
-    # Stage 2: Semantic similarity matching (fast, no LLM call)
-    if use_semantic:
-        similar_entities = kg.find_similar_entities(
-            query,
-            top_k=5,
-            threshold=semantic_threshold,
-        )
-        if similar_entities:
-            matched_entities = [entity for entity, score in similar_entities]
-            logger.debug(f"Semantic matching found {len(matched_entities)} entities")
-            return matched_entities
-
-    # Second: use LLM to extract entity mentions
+    # Stage 2: Use LLM to extract entity mentions
     entity_names = list(kg._name_to_id.keys())
     if not entity_names:
         return []

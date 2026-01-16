@@ -6,21 +6,16 @@ Provides smart routing between Vector RAG and GraphRAG based on:
 - Confidence-based fallback
 - Cost-aware skipping
 - Intelligent result fusion
-- Similarity-based classification cache (avoids repeated LLM calls)
 """
 
 import re
-import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 from difflib import SequenceMatcher
 
-import numpy as np
-
 from .utils.llm_client import llm_chat
 from .utils.logger import logger
-from .utils.rag_utils import get_query_embedding
 
 
 class QueryType(Enum):
@@ -68,110 +63,12 @@ class OrchestratorConfig:
     use_llm_classifier: bool = True
     classifier_model: str = None  # Use default LLM if None
 
-    # Classification cache settings
-    use_classification_cache: bool = True
-    cache_similarity_threshold: float = 0.90  # Return cached if similarity above this
-    cache_max_size: int = 1000  # Max cached classifications
-
     # Fusion settings
     dedup_similarity_threshold: float = 0.85  # Deduplicate if similarity above
     max_context_tokens: int = 4000
 
     # Cost settings
     prefer_vector_for_simple: bool = True  # Skip graph for simple factual queries
-
-
-# =============================================================================
-# Classification Cache (similarity-based)
-# =============================================================================
-
-class ClassificationCache:
-    """
-    Cache for query classifications based on embedding similarity.
-
-    Avoids repeated LLM calls for semantically similar queries.
-    Uses cosine similarity to find matches.
-    """
-
-    def __init__(self, similarity_threshold: float = 0.90, max_size: int = 1000):
-        self.similarity_threshold = similarity_threshold
-        self.max_size = max_size
-        self._cache: List[Tuple[np.ndarray, Tuple[Any, ...]]] = []
-        self._hits = 0
-        self._misses = 0
-
-    def get(self, query_embedding: np.ndarray) -> Optional[Tuple[Any, ...]]:
-        """
-        Find a cached classification for a similar query.
-
-        Args:
-            query_embedding: Embedding vector of the query
-
-        Returns:
-            Cached (query_type, confidence, reasoning, entities) or None
-        """
-        if len(self._cache) == 0:
-            return None
-
-        query_norm = np.linalg.norm(query_embedding)
-        if query_norm == 0:
-            return None
-
-        # Find best match
-        best_similarity = 0.0
-        best_result = None
-
-        for cached_emb, cached_result in self._cache:
-            cached_norm = np.linalg.norm(cached_emb)
-            if cached_norm == 0:
-                continue
-            similarity = np.dot(query_embedding, cached_emb) / (query_norm * cached_norm)
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_result = cached_result
-
-        if best_similarity >= self.similarity_threshold:
-            self._hits += 1
-            return best_result
-
-        return None
-
-    def put(self, query_embedding: np.ndarray, result: Tuple[Any, ...]) -> None:
-        """
-        Cache a classification result.
-
-        Args:
-            query_embedding: Embedding vector of the query
-            result: (query_type, confidence, reasoning, entities) tuple
-        """
-        self._misses += 1
-
-        # Evict oldest if at capacity
-        if len(self._cache) >= self.max_size:
-            self._cache.pop(0)
-
-        self._cache.append((query_embedding.copy(), result))
-
-    def stats(self) -> Dict[str, Any]:
-        """Return cache statistics."""
-        total = self._hits + self._misses
-        hit_rate = self._hits / total if total > 0 else 0.0
-        return {
-            "size": len(self._cache),
-            "hits": self._hits,
-            "misses": self._misses,
-            "hit_rate": hit_rate,
-        }
-
-    def clear(self) -> None:
-        """Clear the cache."""
-        self._cache.clear()
-        self._hits = 0
-        self._misses = 0
-
-
-# Global classification cache instance
-_classification_cache = ClassificationCache()
 
 
 # =============================================================================
@@ -306,45 +203,19 @@ ENTITIES: <comma-separated list or "none">
 REASONING: <brief explanation>"""
 
 
-def classify_query_llm(
-    query: str,
-    use_cache: bool = True,
-    cache_threshold: float = 0.95,
-) -> Tuple[QueryType, float, str, List[str]]:
+def classify_query_llm(query: str) -> Tuple[QueryType, float, str, List[str]]:
     """
-    Classify query using LLM with similarity-based caching.
+    Classify query using LLM.
 
     Uses the unified LLM client (Gemini by default).
-    Caches results and returns cached classification for similar queries.
 
     Args:
         query: The query to classify
-        use_cache: Whether to use the classification cache (default True)
-        cache_threshold: Similarity threshold for cache hits (default 0.95)
 
     Returns:
         Tuple of (query_type, confidence, reasoning, entities)
     """
-    global _classification_cache
-
-    query_embedding = None
-
-    # Try cache first
-    if use_cache:
-        try:
-            t_start = time.perf_counter()
-            query_embedding = np.array(get_query_embedding(query))
-            cached = _classification_cache.get(query_embedding)
-            if cached is not None:
-                t_elapsed = time.perf_counter() - t_start
-                logger.info(f"Classification cache HIT in {t_elapsed:.3f}s")
-                return cached
-        except Exception as e:
-            logger.debug(f"Cache lookup failed: {e}")
-
-    # Cache miss - call LLM
     try:
-        t_start = time.perf_counter()
         result = llm_chat(
             messages=[{
                 "role": "user",
@@ -379,31 +250,12 @@ def classify_query_llm(
             elif line.startswith("REASONING:"):
                 reasoning = line.split(":", 1)[1].strip()
 
-        classification = (query_type, confidence, reasoning, entities)
-
-        # Cache the result
-        if use_cache and query_embedding is not None:
-            _classification_cache.put(query_embedding, classification)
-            t_elapsed = time.perf_counter() - t_start
-            logger.info(f"Classification cache MISS, LLM call in {t_elapsed:.3f}s (cached)")
-
-        return classification
+        return (query_type, confidence, reasoning, entities)
 
     except Exception as e:
         logger.warning(f"LLM classification failed: {e}, falling back to rules")
         query_type, confidence, reasoning = classify_query_rules(query)
         return (query_type, confidence, reasoning, [])
-
-
-def get_classification_cache_stats() -> Dict[str, Any]:
-    """Get classification cache statistics."""
-    return _classification_cache.stats()
-
-
-def clear_classification_cache() -> None:
-    """Clear the classification cache."""
-    _classification_cache.clear()
-    logger.info("Classification cache cleared")
 
 
 # =============================================================================
