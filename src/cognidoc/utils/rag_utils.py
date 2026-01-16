@@ -6,10 +6,13 @@ Provides:
 - Direct Qdrant operations for vector search
 - Keyword index using simple dict storage
 - LLM reranking with direct Ollama calls
+- Query embedding cache to avoid redundant computations
 """
 
 import json
 import os
+import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +23,75 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from .logger import logger
 from .embedding_providers import get_embedding_provider
+
+
+# =============================================================================
+# Query Embedding Cache (avoids redundant embedding computations)
+# =============================================================================
+
+class QueryEmbeddingCache:
+    """
+    Simple LRU cache for query embeddings.
+
+    Avoids recomputing the same query embedding multiple times within a session.
+    For example, the same query might be embedded for:
+    - Classification cache lookup
+    - Vector search
+    - Graph search
+
+    By caching, we reduce 3-4 embedding calls to 1.
+    """
+
+    def __init__(self, max_size: int = 100):
+        self.max_size = max_size
+        self._cache: OrderedDict[str, List[float]] = OrderedDict()
+        self._hits = 0
+        self._misses = 0
+
+    def _make_key(self, query: str, task: Optional[str]) -> str:
+        """Create cache key from query and task."""
+        return f"{task or 'default'}::{query}"
+
+    def get(self, query: str, task: Optional[str] = None) -> Optional[List[float]]:
+        """Get cached embedding or None."""
+        key = self._make_key(query, task)
+        if key in self._cache:
+            # Move to end (most recently used)
+            self._cache.move_to_end(key)
+            self._hits += 1
+            return self._cache[key]
+        return None
+
+    def put(self, query: str, embedding: List[float], task: Optional[str] = None) -> None:
+        """Cache an embedding."""
+        key = self._make_key(query, task)
+        self._misses += 1
+
+        # Evict oldest if at capacity
+        if len(self._cache) >= self.max_size:
+            self._cache.popitem(last=False)
+
+        self._cache[key] = embedding
+
+    def stats(self) -> Dict[str, Any]:
+        """Return cache statistics."""
+        total = self._hits + self._misses
+        return {
+            "size": len(self._cache),
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_rate": self._hits / total if total > 0 else 0.0,
+        }
+
+    def clear(self) -> None:
+        """Clear the cache."""
+        self._cache.clear()
+        self._hits = 0
+        self._misses = 0
+
+
+# Global query embedding cache
+_query_embedding_cache = QueryEmbeddingCache()
 
 
 @dataclass
@@ -65,6 +137,7 @@ def get_query_embedding(query: str, task: str = None, model: str = None) -> List
     """
     Get embedding vector for a query with task instruction.
 
+    Uses a cache to avoid recomputing the same query embedding multiple times.
     For Qwen3-Embedding, this uses the format "Instruct: {task}\\nQuery:{query}"
     which improves retrieval accuracy by ~1-5% compared to plain query embedding.
 
@@ -76,8 +149,32 @@ def get_query_embedding(query: str, task: str = None, model: str = None) -> List
     Returns:
         Embedding vector as list of floats
     """
+    global _query_embedding_cache
+
+    # Check cache first
+    cached = _query_embedding_cache.get(query, task)
+    if cached is not None:
+        return cached
+
+    # Compute embedding
     provider = get_embedding_provider()
-    return provider.embed_query(query, task=task)
+    embedding = provider.embed_query(query, task=task)
+
+    # Cache for future use
+    _query_embedding_cache.put(query, embedding, task)
+
+    return embedding
+
+
+def get_query_embedding_cache_stats() -> Dict[str, Any]:
+    """Get query embedding cache statistics."""
+    return _query_embedding_cache.stats()
+
+
+def clear_query_embedding_cache() -> None:
+    """Clear the query embedding cache."""
+    _query_embedding_cache.clear()
+    logger.info("Query embedding cache cleared")
 
 
 def get_embedding_dimension(model: str = None) -> int:
