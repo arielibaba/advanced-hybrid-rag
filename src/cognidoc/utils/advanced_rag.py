@@ -3,16 +3,17 @@ Advanced RAG utilities for improved retrieval quality.
 
 Implements:
 - BM25 sparse retrieval for hybrid search
-- Cross-encoder reranking
+- Cross-encoder reranking with caching
 - Lost-in-the-middle reordering
 - Contextual compression
 - Citation verification
 """
 
+import hashlib
 import re
 import math
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
@@ -21,6 +22,110 @@ import json
 
 from .logger import logger
 from .llm_client import llm_chat
+
+
+# =============================================================================
+# Reranking Cache
+# =============================================================================
+
+class RerankingCache:
+    """
+    LRU cache for reranking results.
+
+    Caches results based on (query, docs_hash) to avoid
+    expensive reranking for identical query+documents.
+    """
+
+    def __init__(self, max_size: int = 100, ttl_seconds: int = 300):
+        """
+        Initialize reranking cache.
+
+        Args:
+            max_size: Maximum cached results
+            ttl_seconds: Time-to-live (default 5 minutes)
+        """
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self._cache: OrderedDict[str, tuple] = OrderedDict()  # key -> (result, timestamp)
+        self._hits = 0
+        self._misses = 0
+
+    def _make_key(self, query: str, docs_texts: List[str]) -> str:
+        """Create cache key from query and document texts."""
+        # Hash documents to create a stable key
+        docs_hash = hashlib.md5("||".join(docs_texts).encode()).hexdigest()[:16]
+        query_hash = hashlib.md5(query.encode()).hexdigest()[:16]
+        return f"{query_hash}:{docs_hash}"
+
+    def get(self, query: str, docs_texts: List[str]) -> Optional[List[Tuple[int, float]]]:
+        """
+        Get cached reranking result.
+
+        Args:
+            query: Search query
+            docs_texts: List of document texts (for hashing)
+
+        Returns:
+            List of (doc_index, score) tuples or None
+        """
+        key = self._make_key(query, docs_texts)
+
+        if key in self._cache:
+            result, timestamp = self._cache[key]
+            elapsed = time.time() - timestamp
+
+            if elapsed < self.ttl_seconds:
+                self._cache.move_to_end(key)
+                self._hits += 1
+                logger.debug(f"Reranking cache HIT (age={elapsed:.1f}s)")
+                return result
+            else:
+                del self._cache[key]
+
+        self._misses += 1
+        return None
+
+    def put(self, query: str, docs_texts: List[str], result: List[Tuple[int, float]]) -> None:
+        """Cache reranking result."""
+        key = self._make_key(query, docs_texts)
+
+        if len(self._cache) >= self.max_size:
+            self._cache.popitem(last=False)
+
+        self._cache[key] = (result, time.time())
+
+    def clear(self) -> None:
+        """Clear the cache."""
+        self._cache.clear()
+        self._hits = 0
+        self._misses = 0
+
+    def stats(self) -> Dict[str, Any]:
+        """Return cache statistics."""
+        total = self._hits + self._misses
+        return {
+            "size": len(self._cache),
+            "max_size": self.max_size,
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_rate": self._hits / total if total > 0 else 0.0,
+            "ttl_seconds": self.ttl_seconds,
+        }
+
+
+# Global reranking cache
+_reranking_cache = RerankingCache()
+
+
+def get_reranking_cache_stats() -> Dict[str, Any]:
+    """Get reranking cache statistics."""
+    return _reranking_cache.stats()
+
+
+def clear_reranking_cache() -> None:
+    """Clear the reranking cache."""
+    _reranking_cache.clear()
+    logger.info("Reranking cache cleared")
 
 
 # =============================================================================
@@ -322,12 +427,14 @@ def cross_encoder_rerank(
     model: str = None,
     top_n: int = 5,
     batch_size: int = 10,  # Now means max parallel requests
+    use_cache: bool = True,
 ) -> List[Tuple[Any, float]]:
     """
     Rerank documents using Qwen3-Reranker cross-encoder via Ollama.
 
     Uses parallel requests for fast reranking (~0.1s per document).
     Much faster than LLM-based reranking (~5s per batch).
+    Results are cached to avoid redundant reranking.
 
     Args:
         query: The search query
@@ -335,6 +442,7 @@ def cross_encoder_rerank(
         model: Reranker model (default: CROSS_ENCODER_MODEL)
         top_n: Number of top documents to return
         batch_size: Max parallel requests (default: 10)
+        use_cache: Whether to use reranking cache (default: True)
 
     Returns:
         List of (document, score) tuples sorted by relevance
@@ -344,6 +452,20 @@ def cross_encoder_rerank(
 
     if model is None:
         model = CROSS_ENCODER_MODEL
+
+    # Extract document texts for cache key
+    docs_texts = []
+    for doc in documents:
+        text = doc.text if hasattr(doc, 'text') else str(doc)
+        docs_texts.append(text[:500])  # Use first 500 chars for hash
+
+    # Check cache
+    if use_cache:
+        cached = _reranking_cache.get(query, docs_texts)
+        if cached is not None:
+            # Reconstruct result from cached (index, score) pairs
+            result = [(documents[idx], score) for idx, score in cached if idx < len(documents)]
+            return result[:top_n]
 
     t_start = time.perf_counter()
 
@@ -366,15 +488,20 @@ def cross_encoder_rerank(
         for future in as_completed(futures):
             try:
                 idx, doc, score = future.result()
-                scored_docs.append((doc, score))
+                scored_docs.append((idx, doc, score))
             except Exception as e:
                 logger.error(f"Reranker task failed: {e}")
                 # Add with default score
                 idx = futures[future]
-                scored_docs.append((documents[idx], 0.5))
+                scored_docs.append((idx, documents[idx], 0.5))
 
     # Sort by score descending
-    scored_docs.sort(key=lambda x: x[1], reverse=True)
+    scored_docs.sort(key=lambda x: x[2], reverse=True)
+
+    # Cache result as (index, score) pairs
+    if use_cache:
+        cache_data = [(idx, score) for idx, doc, score in scored_docs]
+        _reranking_cache.put(query, docs_texts, cache_data)
 
     t_elapsed = time.perf_counter() - t_start
     logger.debug(
@@ -382,7 +509,8 @@ def cross_encoder_rerank(
         f"(Qwen3-Reranker, {batch_size} parallel)"
     )
 
-    return scored_docs[:top_n]
+    # Return as (doc, score) tuples
+    return [(doc, score) for idx, doc, score in scored_docs[:top_n]]
 
 
 # =============================================================================
