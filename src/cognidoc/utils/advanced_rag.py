@@ -244,28 +244,97 @@ def hybrid_search_fusion(
 
 
 # =============================================================================
-# Cross-Encoder Reranking (#9)
+# Cross-Encoder Reranking (#9) - Using Qwen3-Reranker via Ollama
 # =============================================================================
+
+# Ollama API URL for reranking
+OLLAMA_API_URL = "http://localhost:11434/api/generate"
+
+# Default reranker model (can be overridden via CROSS_ENCODER_MODEL env var)
+try:
+    from ..constants import CROSS_ENCODER_MODEL
+except ImportError:
+    CROSS_ENCODER_MODEL = "dengcao/Qwen3-Reranker-0.6B:F16"
+
+
+def _score_single_document(
+    query: str,
+    doc_text: str,
+    model: str = None,
+) -> float:
+    """
+    Score a single query-document pair using Qwen3-Reranker.
+
+    Returns:
+        Score between 0.0 and 1.0 (1.0 = relevant, 0.0 = not relevant)
+    """
+    import requests
+
+    if model is None:
+        model = CROSS_ENCODER_MODEL
+
+    # Qwen3-Reranker prompt format (from HuggingFace documentation)
+    prompt = f"""<|im_start|>system
+Judge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>
+<|im_start|>user
+<Instruct>: Given a web search query, retrieve relevant passages that answer the query.
+<Query>: {query}
+<Document>: {doc_text}<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+"""
+
+    try:
+        response = requests.post(
+            OLLAMA_API_URL,
+            json={
+                "model": model,
+                "prompt": prompt,
+                "raw": True,
+                "stream": False,
+                "options": {"num_predict": 3, "temperature": 0}
+            },
+            timeout=30
+        )
+        result = response.json()
+        answer = result.get("response", "").strip().lower()
+
+        # Convert yes/no to score
+        if "yes" in answer:
+            return 1.0
+        elif "no" in answer:
+            return 0.0
+        else:
+            # Uncertain - return middle score
+            return 0.5
+
+    except Exception as e:
+        logger.warning(f"Reranker scoring failed: {e}")
+        return 0.5  # Default score on error
+
 
 def cross_encoder_rerank(
     query: str,
     documents: List[Any],
-    model: str = None,  # Deprecated, uses configured LLM provider
+    model: str = None,
     top_n: int = 5,
-    batch_size: int = 5,
+    batch_size: int = 10,  # Now means max parallel requests
 ) -> List[Tuple[Any, float]]:
     """
-    Rerank documents using a cross-encoder approach with LLM.
+    Rerank documents using Qwen3-Reranker cross-encoder via Ollama.
 
-    More accurate than bi-encoder but slower. Uses LLM to score
-    query-document pairs directly.
+    Uses parallel requests for fast reranking (~0.1s per document).
+    Much faster than LLM-based reranking (~5s per batch).
 
     Args:
         query: The search query
         documents: List of documents to rerank
-        model: Deprecated, uses configured LLM provider (Gemini by default)
+        model: Reranker model (default: CROSS_ENCODER_MODEL)
         top_n: Number of top documents to return
-        batch_size: Documents to score per LLM call
+        batch_size: Max parallel requests (default: 10)
 
     Returns:
         List of (document, score) tuples sorted by relevance
@@ -273,55 +342,45 @@ def cross_encoder_rerank(
     if not documents:
         return []
 
+    if model is None:
+        model = CROSS_ENCODER_MODEL
+
+    t_start = time.perf_counter()
+
+    def _score_doc(idx_doc: Tuple[int, Any]) -> Tuple[int, Any, float]:
+        """Score a single document and return (index, doc, score)."""
+        idx, doc = idx_doc
+        text = doc.text if hasattr(doc, 'text') else str(doc)
+        # Truncate for efficiency (Qwen3-Reranker supports 32k but shorter is faster)
+        text = text[:2000]
+        score = _score_single_document(query, text, model)
+        return (idx, doc, score)
+
+    # Score documents in parallel
     scored_docs = []
+    doc_items = list(enumerate(documents))
 
-    # Score documents in batches
-    for i in range(0, len(documents), batch_size):
-        batch = documents[i:i + batch_size]
+    with ThreadPoolExecutor(max_workers=batch_size) as executor:
+        futures = {executor.submit(_score_doc, item): item[0] for item in doc_items}
 
-        # Build prompt for batch scoring
-        docs_text = ""
-        for j, doc in enumerate(batch):
-            text = doc.text if hasattr(doc, 'text') else str(doc)
-            text = text[:500]  # Truncate for efficiency
-            docs_text += f"\n[{j+1}] {text}\n"
-
-        prompt = f"""Score the relevance of each document to the query on a scale of 0-10.
-Output ONLY a JSON array of scores, e.g., [8, 5, 9, 3, 7]
-
-Query: {query}
-
-Documents:{docs_text}
-
-Scores (JSON array only):"""
-
-        try:
-            # Use the configured LLM provider (Gemini by default)
-            response_text = llm_chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.0,
-            )
-
-            # Extract JSON array from response
-            match = re.search(r'\[[\d\s,\.]+\]', response_text.strip())
-            if match:
-                scores = json.loads(match.group())
-                for j, doc in enumerate(batch):
-                    score = scores[j] if j < len(scores) else 0
-                    scored_docs.append((doc, float(score)))
-            else:
-                # Fallback: assign decreasing scores
-                for j, doc in enumerate(batch):
-                    scored_docs.append((doc, 5.0 - j * 0.1))
-
-        except Exception as e:
-            logger.warning(f"Cross-encoder scoring failed: {e}")
-            # Fallback scores
-            for j, doc in enumerate(batch):
-                scored_docs.append((doc, 5.0))
+        for future in as_completed(futures):
+            try:
+                idx, doc, score = future.result()
+                scored_docs.append((doc, score))
+            except Exception as e:
+                logger.error(f"Reranker task failed: {e}")
+                # Add with default score
+                idx = futures[future]
+                scored_docs.append((documents[idx], 0.5))
 
     # Sort by score descending
     scored_docs.sort(key=lambda x: x[1], reverse=True)
+
+    t_elapsed = time.perf_counter() - t_start
+    logger.debug(
+        f"Cross-encoder rerank: {len(documents)} docs in {t_elapsed:.2f}s "
+        f"(Qwen3-Reranker, {batch_size} parallel)"
+    )
 
     return scored_docs[:top_n]
 

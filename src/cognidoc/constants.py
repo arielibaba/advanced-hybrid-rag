@@ -441,9 +441,10 @@ BM25_K1 = float(os.getenv("BM25_K1", "1.5"))  # Term frequency saturation
 BM25_B = float(os.getenv("BM25_B", "0.75"))   # Length normalization
 BM25_INDEX_PATH = str((Path(INDEX_DIR) / "bm25_index.json").resolve())
 
-# Cross-Encoder Reranking
+# Cross-Encoder Reranking (uses Qwen3-Reranker via Ollama)
 ENABLE_CROSS_ENCODER = os.getenv("ENABLE_CROSS_ENCODER", "true").lower() == "true"
-CROSS_ENCODER_BATCH_SIZE = int(os.getenv("CROSS_ENCODER_BATCH_SIZE", "5"))
+CROSS_ENCODER_MODEL = os.getenv("CROSS_ENCODER_MODEL", "dengcao/Qwen3-Reranker-0.6B:F16")
+CROSS_ENCODER_BATCH_SIZE = int(os.getenv("CROSS_ENCODER_BATCH_SIZE", "10"))
 
 # Lost-in-the-Middle Reordering (places best results at start/end for LLM attention)
 ENABLE_LOST_IN_MIDDLE_REORDER = os.getenv("ENABLE_LOST_IN_MIDDLE_REORDER", "true").lower() == "true"
