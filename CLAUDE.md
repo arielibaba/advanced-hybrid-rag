@@ -96,7 +96,7 @@ Resume from specific stage:
 ```bash
 --yolo-batch-size 2       # YOLO batch size (default: 2, increase for more VRAM)
 --no-yolo-batching        # Disable YOLO batching (sequential processing)
---entity-max-concurrent 4 # Concurrent LLM calls for entity extraction (default: 4)
+--entity-max-concurrent 4 # Concurrent LLM calls for entity extraction (default: auto, 2-8 based on CPU)
 --no-async-extraction     # Disable async entity extraction (sequential)
 ```
 
@@ -205,10 +205,10 @@ Source code is in `src/cognidoc/` but installs as `cognidoc` package. When runni
 | `src/cognidoc/run_ingestion_pipeline.py` | Async pipeline orchestrator |
 | `src/cognidoc/cognidoc_app.py` | Gradio chat with FastAPI static file serving |
 | `src/cognidoc/hybrid_retriever.py` | Vector + Graph fusion with query orchestration and caching |
-| `src/cognidoc/knowledge_graph.py` | NetworkX graph with Louvain community detection |
+| `src/cognidoc/knowledge_graph.py` | NetworkX graph with Louvain community detection and batch embeddings |
 | `src/cognidoc/query_orchestrator.py` | LLM-based query classification and routing |
 | `src/cognidoc/complexity.py` | Query complexity evaluation for agentic routing |
-| `src/cognidoc/agent.py` | ReAct agent for complex multi-step queries |
+| `src/cognidoc/agent.py` | ReAct agent with parallel reflection for complex queries |
 | `src/cognidoc/agent_tools.py` | Tool implementations for agent (9 tools) |
 | `src/cognidoc/helpers.py` | Query rewriting, parsing, conversation context |
 | `src/cognidoc/schema_wizard.py` | Interactive/auto schema generation for GraphRAG |
@@ -222,7 +222,7 @@ Source code is in `src/cognidoc/` but installs as `cognidoc` package. When runni
 | `src/cognidoc/create_embeddings.py` | Batched async embedding generation |
 | `src/cognidoc/convert_pdf_to_image.py` | Parallel PDF to image conversion |
 | `src/cognidoc/extract_objects_from_image.py` | YOLO detection with batch inference |
-| `src/cognidoc/extract_entities.py` | Async entity/relationship extraction |
+| `src/cognidoc/extract_entities.py` | Async entity/relationship extraction with adaptive concurrency |
 
 ### Query Routing
 
@@ -422,7 +422,7 @@ Language rules are enforced in prompts to ensure responses match query language 
 | PDF→Images | `convert_pdf_to_image.py` | `ProcessPoolExecutor` (4 workers) |
 | YOLO Detection | `extract_objects_from_image.py` | Batch inference (batch_size=2) |
 | Embeddings | `create_embeddings.py` | Batched async with `httpx.AsyncClient` |
-| Entity Extraction | `extract_entities.py` | Async with semaphore (max_concurrent=4) |
+| Entity Extraction | `extract_entities.py` | Async with adaptive semaphore (auto 2-8 based on CPU) |
 | Cache | `utils/embedding_cache.py` | SQLite persistent cache |
 
 ```python
@@ -437,7 +437,7 @@ create_embeddings(chunks_dir, embeddings_dir, batch_size=32, max_concurrent=4)
 - `max_workers=4` for PDF conversion (avoids memory saturation)
 - `max_concurrent=4` for embeddings (overlaps network I/O)
 - `yolo_batch_size=2` for YOLO detection (batch inference)
-- `entity_max_concurrent=4` for async entity extraction
+- `entity_max_concurrent=auto` for async entity extraction (auto-detects 2-8 based on CPU cores)
 
 **Query-Time Optimizations:**
 
@@ -449,6 +449,17 @@ create_embeddings(chunks_dir, embeddings_dir, batch_size=32, max_concurrent=4)
 | Query Embedding Cache | `utils/rag_utils.py` | Avoids recomputing same query embedding |
 | HNSW Index | `utils/rag_utils.py` | Faster approximate vector search (m=16, ef=100) |
 | HTTP Connection Pooling | `utils/embedding_providers.py` | Shared `httpx.AsyncClient` for Ollama embeddings |
+| Reranking Cache | `utils/advanced_rag.py` | LRU cache for cross-encoder results (5min TTL) |
+| Startup Warm-up | `cognidoc_app.py` | Pre-loads LLM, embeddings, retriever, reranker |
+| Streaming Progress | `cognidoc_app.py` | Shows "🔍 Searching..." during retrieval |
+
+**Agent Optimizations:**
+
+| Optimization | Module | Impact |
+|--------------|--------|--------|
+| Parallel Reflection | `agent.py` | Reflection runs in background thread via `ThreadPoolExecutor` |
+| Adaptive Concurrency | `extract_entities.py` | Auto-detects CPU cores (2-8 workers) |
+| Batch Entity Embeddings | `knowledge_graph.py` | Uses `embed_async()` for 5-10x faster ingestion |
 
 ```python
 # Retrieval cache API
@@ -458,17 +469,25 @@ stats = get_retrieval_cache_stats()
 # {'size': 5, 'hits': 12, 'misses': 8, 'hit_rate': 0.6, 'ttl_seconds': 300}
 
 clear_retrieval_cache()  # Clear cache manually
+
+# Reranking cache API
+from cognidoc.utils.advanced_rag import get_reranking_cache_stats, clear_reranking_cache
+
+stats = get_reranking_cache_stats()
+# {'size': 10, 'hits': 5, 'misses': 3, 'hit_rate': 0.625, 'ttl_seconds': 300}
+
+clear_reranking_cache()  # Clear cache manually
 ```
 
-**Tool Result Caching** (`agent_tools.py`):
+**Tool Result Caching** (`utils/tool_cache.py`):
 ```python
-class ToolCache:
+class PersistentToolCache:
     TTL_CONFIG = {
-        "database_stats": 300,    # 5 min
-        "retrieve_vector": 120,   # 2 min
-        "retrieve_graph": 120,    # 2 min
-        "lookup_entity": 300,     # 5 min
-        "compare_entities": 180,  # 3 min
+        "database_stats": 1800,   # 30 min - rarely changes
+        "retrieve_vector": 300,   # 5 min - search results
+        "retrieve_graph": 300,    # 5 min - graph results
+        "lookup_entity": 600,     # 10 min - entity data
+        "compare_entities": 1800, # 30 min - stable comparisons
     }
 ```
 
