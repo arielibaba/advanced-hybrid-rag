@@ -391,6 +391,96 @@ SUMMARY:"""
         else:
             logger.info(f"Community summaries: {generated} generated")
 
+    def compute_entity_embeddings(self, skip_existing: bool = True) -> int:
+        """
+        Pre-compute embeddings for all entities.
+
+        Embeddings are computed from "{name}: {description}" text.
+        This enables fast semantic matching at query time.
+
+        Args:
+            skip_existing: If True, skip entities that already have embeddings
+
+        Returns:
+            Number of embeddings computed
+        """
+        if not self.nodes:
+            return 0
+
+        computed = 0
+        skipped = 0
+
+        for node_id, node in self.nodes.items():
+            # Skip if already has embedding
+            if skip_existing and node.embedding is not None:
+                skipped += 1
+                continue
+
+            # Build text for embedding: name + description
+            text = node.name
+            if node.description:
+                text = f"{node.name}: {node.description}"
+
+            try:
+                node.embedding = get_embedding(text, EMBED_MODEL)
+                computed += 1
+            except Exception as e:
+                logger.warning(f"Failed to compute embedding for entity {node.name}: {e}")
+
+        logger.info(f"Entity embeddings: {computed} computed, {skipped} skipped")
+        return computed
+
+    def find_similar_entities(
+        self,
+        query: str,
+        top_k: int = 5,
+        threshold: float = 0.5,
+    ) -> List[Tuple[GraphNode, float]]:
+        """
+        Find entities semantically similar to the query.
+
+        Uses pre-computed entity embeddings for fast similarity search.
+
+        Args:
+            query: Query text
+            top_k: Maximum number of results
+            threshold: Minimum similarity score
+
+        Returns:
+            List of (entity, similarity_score) tuples, sorted by score
+        """
+        import numpy as np
+        from .utils.rag_utils import get_query_embedding
+
+        # Get query embedding
+        try:
+            query_emb = np.array(get_query_embedding(query))
+            query_norm = np.linalg.norm(query_emb)
+            if query_norm == 0:
+                return []
+        except Exception as e:
+            logger.error(f"Failed to get query embedding: {e}")
+            return []
+
+        # Score all entities with embeddings
+        scored = []
+        for node in self.nodes.values():
+            if node.embedding is None:
+                continue
+
+            entity_emb = np.array(node.embedding)
+            entity_norm = np.linalg.norm(entity_emb)
+            if entity_norm == 0:
+                continue
+
+            similarity = float(np.dot(query_emb, entity_emb) / (query_norm * entity_norm))
+            if similarity >= threshold:
+                scored.append((node, similarity))
+
+        # Sort by score and return top_k
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
+
     def get_node_by_name(self, name: str) -> Optional[GraphNode]:
         """Get a node by its name (case-insensitive)."""
         node_id = self._find_existing_node(name)
@@ -553,7 +643,7 @@ SUMMARY:"""
         with open(save_path / "graph.gpickle", "wb") as f:
             pickle.dump(self.graph, f, pickle.HIGHEST_PROTOCOL)
 
-        # Save nodes
+        # Save nodes (including pre-computed embeddings)
         nodes_data = {nid: {
             "id": n.id,
             "name": n.name,
@@ -562,6 +652,7 @@ SUMMARY:"""
             "attributes": n.attributes,
             "source_chunks": n.source_chunks,
             "community_id": n.community_id,
+            "embedding": n.embedding,
         } for nid, n in self.nodes.items()}
 
         with open(save_path / "nodes.json", "w", encoding="utf-8") as f:
@@ -619,6 +710,7 @@ SUMMARY:"""
                     attributes=data.get("attributes", {}),
                     source_chunks=data.get("source_chunks", []),
                     community_id=data.get("community_id"),
+                    embedding=data.get("embedding"),  # Load pre-computed embedding
                 )
 
         # Load communities
@@ -686,6 +778,9 @@ def build_knowledge_graph(
         # Generate summaries if enabled
         if generate_summaries and kg.config.graph.generate_community_summaries:
             kg.generate_community_summaries()
+
+    # Compute entity embeddings for semantic search
+    kg.compute_entity_embeddings()
 
     # Save if requested
     if save_graph:

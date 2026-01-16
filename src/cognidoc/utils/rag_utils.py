@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Distance, HnswConfigDiff, PointStruct, VectorParams
 
 from .logger import logger
 from .embedding_providers import get_embedding_provider
@@ -232,22 +232,35 @@ class VectorIndex:
         # Check if collection exists
         existing = [c.name for c in client.get_collections().collections]
 
+        # HNSW configuration for faster approximate search
+        # m=16: number of bi-directional links per node (higher = better recall, more memory)
+        # ef_construct=100: size of dynamic candidate list during construction
+        hnsw_config = HnswConfigDiff(m=16, ef_construct=100)
+
         if collection_name in existing:
             if recreate:
                 client.delete_collection(collection_name)
                 client.create_collection(
                     collection_name=collection_name,
-                    vectors_config=VectorParams(size=embed_dim, distance=Distance.COSINE),
+                    vectors_config=VectorParams(
+                        size=embed_dim,
+                        distance=Distance.COSINE,
+                        hnsw_config=hnsw_config,
+                    ),
                 )
-                logger.info(f"Recreated collection: {collection_name}")
+                logger.info(f"Recreated collection: {collection_name} (HNSW enabled)")
             else:
                 logger.info(f"Using existing collection: {collection_name}")
         else:
             client.create_collection(
                 collection_name=collection_name,
-                vectors_config=VectorParams(size=embed_dim, distance=Distance.COSINE),
+                vectors_config=VectorParams(
+                    size=embed_dim,
+                    distance=Distance.COSINE,
+                    hnsw_config=hnsw_config,
+                ),
             )
-            logger.info(f"Created collection: {collection_name} (dim={embed_dim})")
+            logger.info(f"Created collection: {collection_name} (dim={embed_dim}, HNSW enabled)")
 
         return cls(client, collection_name, embed_model)
 
