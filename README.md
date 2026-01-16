@@ -437,11 +437,11 @@ result2 = client.predict(
 
 | Tool | TTL | Reason |
 |------|-----|--------|
-| `database_stats` | 5 min | Metadata rarely changes |
-| `retrieve_vector` | 2 min | Same query, same results |
-| `retrieve_graph` | 2 min | Graph traversal cached |
-| `lookup_entity` | 5 min | Entity details stable |
-| `compare_entities` | 3 min | Comparison cached |
+| `database_stats` | 30 min | Metadata rarely changes |
+| `retrieve_vector` | 5 min | Same query, same results |
+| `retrieve_graph` | 5 min | Graph traversal cached |
+| `lookup_entity` | 10 min | Entity details stable |
+| `compare_entities` | 30 min | Comparison cached |
 
 ### Ingestion Optimizations
 
@@ -450,6 +450,17 @@ result2 = client.predict(
 | PDF → Images | ProcessPoolExecutor (4 workers) | ~2x |
 | Embeddings | Batched async HTTP | ~5x |
 | Cache | SQLite persistent | Instant (cached) |
+
+### Query-Time Optimizations
+
+| Optimization | Impact |
+|--------------|--------|
+| Retrieval Cache | ~175,000x speedup on identical queries |
+| Qdrant Result Cache | LRU cache (50 entries, 5min TTL) |
+| BM25 Lazy Loading | Loaded only on first hybrid search |
+| BM25 Tokenization Cache | LRU cache (1000 entries) |
+| Lazy Entity Embeddings | Computed on first semantic search |
+| Adaptive Reranker Batch | Adjusts to CPU cores and doc count |
 
 ### Real-time Progress
 
