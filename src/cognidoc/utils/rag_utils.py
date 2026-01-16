@@ -43,7 +43,7 @@ class NodeWithScore:
 
 def get_embedding(text: str, model: str = None) -> List[float]:
     """
-    Get embedding vector for text.
+    Get embedding vector for text (documents/passages).
 
     Uses the configured embedding provider (Ollama by default, but can be
     OpenAI or Gemini based on configuration).
@@ -59,6 +59,25 @@ def get_embedding(text: str, model: str = None) -> List[float]:
     """
     provider = get_embedding_provider()
     return provider.embed_single(text)
+
+
+def get_query_embedding(query: str, task: str = None, model: str = None) -> List[float]:
+    """
+    Get embedding vector for a query with task instruction.
+
+    For Qwen3-Embedding, this uses the format "Instruct: {task}\\nQuery:{query}"
+    which improves retrieval accuracy by ~1-5% compared to plain query embedding.
+
+    Args:
+        query: Query text to embed
+        task: Task instruction (optional, uses default from constants)
+        model: Model name (optional, for backwards compatibility)
+
+    Returns:
+        Embedding vector as list of floats
+    """
+    provider = get_embedding_provider()
+    return provider.embed_query(query, task=task)
 
 
 def get_embedding_dimension(model: str = None) -> int:
@@ -192,8 +211,8 @@ class VectorIndex:
         Returns:
             List of documents with scores
         """
-        # Get query embedding
-        query_vector = get_embedding(query, self.embed_model)
+        # Get query embedding with task instruction (improves accuracy for Qwen3-Embedding)
+        query_vector = get_query_embedding(query)
 
         # Search Qdrant using query_points (newer API)
         results = self.client.query_points(

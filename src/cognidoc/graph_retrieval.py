@@ -19,7 +19,7 @@ from .graph_config import get_graph_config, GraphConfig
 from .constants import EMBED_MODEL
 from .utils.llm_client import llm_chat
 from .utils.logger import logger
-from .utils.rag_utils import get_embedding
+from .utils.rag_utils import get_embedding, get_query_embedding
 
 
 @dataclass
@@ -299,9 +299,9 @@ def retrieve_by_community(
             confidence=0.0,
         )
 
-    # Get query embedding
+    # Get query embedding with task instruction (improves accuracy for Qwen3-Embedding)
     try:
-        query_embedding = get_embedding(query, EMBED_MODEL)
+        query_embedding = get_query_embedding(query)
     except Exception as e:
         logger.error(f"Failed to get query embedding: {e}")
         # Fallback to text matching

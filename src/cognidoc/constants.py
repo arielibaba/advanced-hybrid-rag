@@ -84,6 +84,13 @@ OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "granite3.3:8b")
 OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "qwen3-vl:8b-instruct")
 OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b")
 
+# Qwen3-Embedding task instruction for query embeddings (improves retrieval accuracy by ~1-5%)
+# Format: "Instruct: {task}\nQuery:{query}" - documents don't need instructions
+QWEN_EMBEDDING_TASK = os.getenv(
+    "QWEN_EMBEDDING_TASK",
+    "Given a web search query, retrieve relevant passages that answer the query"
+)
+
 OPENAI_LLM_MODEL = os.getenv("OPENAI_LLM_MODEL", "gpt-4o")
 OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")
 

@@ -66,6 +66,23 @@ class BaseEmbeddingProvider(ABC):
         """Generate embedding for a single text."""
         pass
 
+    def embed_query(self, query: str, task: Optional[str] = None) -> List[float]:
+        """
+        Generate embedding for a query with task instruction.
+
+        For Qwen3-Embedding, uses format: "Instruct: {task}\nQuery:{query}"
+        For other providers, delegates to embed_single (no instruction support).
+
+        Args:
+            query: The query text to embed
+            task: Task instruction (optional, uses default if not specified)
+
+        Returns:
+            Embedding vector as list of floats
+        """
+        # Default implementation: just use embed_single
+        return self.embed_single(query)
+
     @property
     def dimension(self) -> int:
         """Get embedding dimension (computed lazily)."""
@@ -98,6 +115,32 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
     def embed_single(self, text: str) -> List[float]:
         response = self.client.embeddings(model=self.config.model, prompt=text)
         return response["embedding"]
+
+    def embed_query(self, query: str, task: Optional[str] = None) -> List[float]:
+        """
+        Generate embedding for a query with task instruction.
+
+        For Qwen3-Embedding, uses format: "Instruct: {task}\\nQuery:{query}"
+        This improves retrieval accuracy by ~1-5% compared to plain query embedding.
+
+        Args:
+            query: The query text to embed
+            task: Task instruction (uses QWEN_EMBEDDING_TASK from constants if not specified)
+
+        Returns:
+            Embedding vector as list of floats
+        """
+        # Only apply task instruction for Qwen3-Embedding models
+        if "qwen" in self.config.model.lower() and "embedding" in self.config.model.lower():
+            from cognidoc.constants import QWEN_EMBEDDING_TASK
+            if task is None:
+                task = QWEN_EMBEDDING_TASK
+            # Format: "Instruct: {task}\nQuery:{query}"
+            formatted_query = f"Instruct: {task}\nQuery:{query}"
+            return self.embed_single(formatted_query)
+        else:
+            # For other models, just embed the query directly
+            return self.embed_single(query)
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         """Embed multiple texts (Ollama processes one at a time)."""
