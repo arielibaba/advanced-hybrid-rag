@@ -497,7 +497,7 @@ class CogniDoc:
             no_rerank: Disable LLM reranking
         """
         try:
-            from .cognidoc_app import create_app
+            from .cognidoc_app import create_gradio_app
         except ImportError as e:
             raise ImportError(
                 f"UI dependencies not installed: {e}. Install with: pip install cognidoc[ui]"
@@ -508,7 +508,7 @@ class CogniDoc:
             self.config.use_reranking = False
 
         logger.info(f"Launching CogniDoc UI on port {port}")
-        app = create_app(use_reranking=self.config.use_reranking)
+        app = create_gradio_app(default_reranking=self.config.use_reranking)
         app.launch(server_port=port, share=share)
 
     def save(self, path: str):
