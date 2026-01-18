@@ -13,6 +13,7 @@ No LlamaIndex dependencies - uses direct Qdrant and Ollama calls.
 
 import argparse
 import time
+import unicodedata
 import urllib.parse
 import warnings
 
@@ -1245,27 +1246,34 @@ def chat_conversation(
             try:
                 doc_pages[doc].add(int(page))
             except (ValueError, TypeError):
-                doc_pages[doc].add(page)
+                # Page might be a string like "5 2" - extract first number
+                import re
+                match = re.search(r'\d+', str(page))
+                if match:
+                    doc_pages[doc].add(int(match.group()))
 
     # Format references with consolidated page numbers for styled display
     sources = []
     for doc, pages in doc_pages.items():
         # Create PDF file path - URL encoded filename
         # doc may contain path separators for subdirectories (e.g., "projet_A/doc")
-        pdf_filename = f"{doc}.pdf"
+        # Normalize to NFC to ensure consistent Unicode representation
+        # (macOS often uses NFD, but URLs and most systems expect NFC)
+        doc_normalized = unicodedata.normalize('NFC', doc)
+        pdf_filename = f"{doc_normalized}.pdf"
         # Use safe='/' to preserve path separators in the URL
         encoded_filename = urllib.parse.quote(pdf_filename, safe='/')
         # Use /pdfs/ path for FastAPI static file serving
         base_url = f"/pdfs/{encoded_filename}"
 
-        # Extract folder and filename from doc path
-        if "/" in doc:
-            parts = doc.rsplit("/", 1)
+        # Extract folder and filename from doc path (use normalized version)
+        if "/" in doc_normalized:
+            parts = doc_normalized.rsplit("/", 1)
             folder = parts[0]
             title = parts[1]
         else:
             folder = ""
-            title = doc
+            title = doc_normalized
 
         # Build page display and URL with page anchor
         if not pages:
@@ -1910,12 +1918,17 @@ def main():
     # Create FastAPI app and mount Gradio + static files
     app = FastAPI()
 
-    # Mount PDF directory for static file serving
-    app.mount("/pdfs", StaticFiles(directory=PDF_DIR), name="pdfs")
-    logger.info(f"Static PDF files mounted at /pdfs from {PDF_DIR}")
-
-    # Mount Gradio app
+    # Mount Gradio app on root path first
     app = gr.mount_gradio_app(app, demo, path="/")
+
+    # Add explicit route for PDF files AFTER Gradio mount
+    # Using add_route ensures it's not overwritten by Gradio
+    from starlette.routing import Mount
+    from starlette.staticfiles import StaticFiles as StarletteStaticFiles
+    pdf_app = StarletteStaticFiles(directory=PDF_DIR, check_dir=True)
+    # Insert at the beginning of routes to take priority
+    app.routes.insert(0, Mount("/pdfs", app=pdf_app, name="pdfs"))
+    logger.info(f"Static PDF files mounted at /pdfs from {PDF_DIR}")
 
     logger.info(f"Launching CogniDoc on port {args.port}...")
     uvicorn.run(app, host="0.0.0.0", port=args.port)
