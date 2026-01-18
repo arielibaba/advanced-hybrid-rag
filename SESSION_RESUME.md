@@ -1538,6 +1538,26 @@ COGNIDOC_DATA_DIR="/Users/arielibaba/Documents/projets perso/cognidoc-theologie-
   uv run pytest tests/test_benchmark.py -v --run-slow
 ```
 
+### Analyse qualité RAG (benchmark actuel)
+
+| Métrique | Valeur | Verdict |
+|----------|--------|---------|
+| Latence | 4-5s | ✅ Acceptable |
+| MRR | 0.667 | ✅ Correct |
+| Topic Precision | 50% | ⚠️ Médiocre - 1 doc sur 2 hors-sujet |
+| Keyword Hit Rate | 61% | ⚠️ Passable - 40% mots-clés manquants |
+
+### Pistes d'amélioration identifiées
+
+1. **Reranking plus agressif** - Activer cross-encoder pour filtrer le bruit (`use_reranking=True`)
+2. **Ajuster les embeddings** - Tester qwen3-embedding:4b vs 0.6b
+3. **Revoir le chunking** - Tester 1024 tokens au lieu de 512
+4. **Évaluer GraphRAG isolément** - Benchmark dédié pour mesurer l'apport du graph
+
+**Objectifs cibles:**
+- Topic Precision > 70%
+- Keyword Hit Rate > 80%
+
 ### Améliorations futures
 
 - Envisager LLMLingua ou xRAG pour compression sans appel LLM

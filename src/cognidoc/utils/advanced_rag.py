@@ -389,6 +389,10 @@ def _score_single_document(
     """
     Score a single query-document pair using Qwen3-Reranker.
 
+    Note: This uses binary yes/no scoring as Qwen3-Reranker is trained for that format.
+    For continuous scoring with fine-grained ranking, use LLM-based reranking
+    (set ENABLE_CROSS_ENCODER=false to use rerank_documents instead).
+
     Returns:
         Score between 0.0 and 1.0 (1.0 = relevant, 0.0 = not relevant)
     """
@@ -432,8 +436,7 @@ Judge whether the Document meets the requirements based on the Query and the Ins
         elif "no" in answer:
             return 0.0
         else:
-            # Uncertain - return middle score
-            return 0.5
+            return 0.5  # Uncertain
 
     except Exception as e:
         logger.warning(f"Reranker scoring failed: {e}")

@@ -104,14 +104,14 @@ class RetrievalCache:
         self._hits = 0
         self._misses = 0
 
-    def _make_key(self, query: str, top_k: int, use_reranking: bool) -> str:
-        """Create cache key from query parameters."""
-        key_data = f"{query}|{top_k}|{use_reranking}"
+    def _make_key(self, query: str, top_k: int, use_reranking: bool, strategy: str = "auto") -> str:
+        """Create cache key from query parameters including routing strategy."""
+        key_data = f"{query}|{top_k}|{use_reranking}|{strategy}"
         return hashlib.md5(key_data.encode()).hexdigest()
 
-    def get(self, query: str, top_k: int, use_reranking: bool) -> Optional["HybridRetrievalResult"]:
+    def get(self, query: str, top_k: int, use_reranking: bool, strategy: str = "auto") -> Optional["HybridRetrievalResult"]:
         """Get cached result if valid."""
-        key = self._make_key(query, top_k, use_reranking)
+        key = self._make_key(query, top_k, use_reranking, strategy)
 
         if key in self._cache:
             result, timestamp = self._cache[key]
@@ -130,9 +130,9 @@ class RetrievalCache:
         self._misses += 1
         return None
 
-    def put(self, query: str, top_k: int, use_reranking: bool, result: "HybridRetrievalResult") -> None:
+    def put(self, query: str, top_k: int, use_reranking: bool, result: "HybridRetrievalResult", strategy: str = "auto") -> None:
         """Cache a retrieval result."""
-        key = self._make_key(query, top_k, use_reranking)
+        key = self._make_key(query, top_k, use_reranking, strategy)
 
         # Evict oldest if at capacity
         if len(self._cache) >= self.max_size:
@@ -480,10 +480,13 @@ class HybridRetriever:
         if top_k is None:
             top_k = TOP_K_RETRIEVED_CHILDREN
 
+        # Get routing strategy for cache key differentiation
+        cache_strategy = self.config.routing.strategy if self.config else "auto"
+
         # Check retrieval cache for identical queries (skip if metadata filters or pre-computed routing)
         use_cache = metadata_filters is None and pre_computed_routing is None
         if use_cache:
-            cached_result = _retrieval_cache.get(query, top_k, use_reranking)
+            cached_result = _retrieval_cache.get(query, top_k, use_reranking, cache_strategy)
             if cached_result is not None:
                 cached_result.metadata["from_cache"] = True
                 return cached_result
@@ -538,6 +541,16 @@ class HybridRetriever:
         # Determine what to skip
         skip_vector = routing.skip_vector if routing else False
         skip_graph = routing.skip_graph if routing else False
+
+        # Respect config routing strategy override (for benchmarking/testing)
+        if self.config and self.config.routing.strategy == "vector_only":
+            skip_graph = True
+        elif self.config and self.config.routing.strategy == "graph_only":
+            skip_vector = True
+        elif self.config and self.config.routing.strategy == "hybrid":
+            # Force both vector and graph retrieval
+            skip_vector = False
+            skip_graph = False
 
         # =======================================================================
         # PARALLEL RETRIEVAL: Vector and Graph run concurrently
@@ -789,7 +802,7 @@ class HybridRetriever:
 
         # Cache result for future identical queries
         if use_cache:
-            _retrieval_cache.put(query, top_k, use_reranking, result)
+            _retrieval_cache.put(query, top_k, use_reranking, result, cache_strategy)
 
         return result
 

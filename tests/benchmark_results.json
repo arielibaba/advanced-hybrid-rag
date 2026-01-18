@@ -1,0 +1,16 @@
+{
+  "vector_only": {
+    "avg_latency_ms": 8297.958683499746,
+    "avg_precision": 0.275,
+    "avg_keyword_hit_rate": 0.475,
+    "mrr": 0.3,
+    "num_queries": 10
+  },
+  "hybrid": {
+    "avg_latency_ms": 8744.781975000296,
+    "avg_precision": 0.293154486586494,
+    "avg_keyword_hit_rate": 0.5399999999999999,
+    "mrr": 0.32256410256410256,
+    "num_queries": 10
+  }
+}

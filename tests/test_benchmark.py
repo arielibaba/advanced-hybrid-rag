@@ -264,7 +264,7 @@ class BenchmarkRunner:
             retriever.config.routing.strategy = "vector_only"
 
         try:
-            result = retriever.retrieve(query=query, top_k=top_k, use_reranking=False)
+            result = retriever.retrieve(query=query, top_k=top_k, use_reranking=True)
             documents = self._extract_documents(result)
         finally:
             if retriever.config:
@@ -286,13 +286,14 @@ class BenchmarkRunner:
 
         retriever = self._get_retriever()
 
-        # Ensure hybrid mode
+        # Force hybrid mode (vector + graph) regardless of smart routing decision
+        # This ensures benchmarking compares vector-only vs vector+graph fairly
         original_strategy = retriever.config.routing.strategy if retriever.config else "auto"
         if retriever.config:
-            retriever.config.routing.strategy = "auto"
+            retriever.config.routing.strategy = "hybrid"
 
         try:
-            result = retriever.retrieve(query=query, top_k=top_k, use_reranking=False)
+            result = retriever.retrieve(query=query, top_k=top_k, use_reranking=True)
             documents = self._extract_documents(result)
         finally:
             if retriever.config:
