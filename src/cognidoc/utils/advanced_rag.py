@@ -620,7 +620,9 @@ def compress_context(
         text = doc.text if hasattr(doc, 'text') else str(doc)
 
         # Skip if already short enough (avoids expensive LLM calls for small docs)
-        if len(text.split()) < skip_threshold:
+        # Estimate tokens as len(text) / 4 (approx 4 chars per token)
+        estimated_tokens = len(text) // 4
+        if estimated_tokens < skip_threshold:
             return (doc_idx, text)
 
         prompt = f"""Extract ONLY the parts of this document that are relevant to the query.
