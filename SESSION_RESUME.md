@@ -1563,3 +1563,117 @@ COGNIDOC_DATA_DIR="/Users/arielibaba/Documents/projets perso/cognidoc-theologie-
 - Envisager LLMLingua ou xRAG pour compression sans appel LLM
 - Compression au niveau token plutôt que document
 - Benchmark A/B avec/sans compression sur différents domaines
+
+---
+
+## Session 14 - 18 janvier 2026
+
+### Problème: Reranking sans effet sur les métriques
+
+**Investigation:** Le reranking avec `use_reranking=True` ne modifiait pas les métriques de précision.
+
+**Cause racine:** Le cross-encoder Qwen3-Reranker utilise un format **yes/no binaire** :
+- Tous les documents "yes" obtiennent un score de 1.0
+- Tous les documents "no" obtiennent un score de 0.0
+- Python `sort()` est stable → aucun réordonnancement entre les "yes"
+
+### Solution implémentée
+
+1. **Revert `_score_single_document` au format yes/no** (`utils/advanced_rag.py`)
+   - Le format 1-10 ne fonctionnait pas avec Qwen3-Reranker
+   - Revert au format original pour compatibilité
+
+2. **Désactivation cross-encoder par défaut** (`constants.py`)
+   ```python
+   ENABLE_CROSS_ENCODER = os.getenv("ENABLE_CROSS_ENCODER", "false").lower() == "true"
+   ```
+   - LLM-based reranking (Gemini) utilisé à la place
+   - Scoring continu (1-10) pour un vrai réordonnancement
+
+3. **Fix cache key avec routing strategy** (`hybrid_retriever.py`)
+   - Problème: vector_only et hybrid partageaient le même cache (mêmes métriques)
+   - Solution: Ajout de `strategy` dans la clé de cache
+   ```python
+   key_data = f"{query}|{top_k}|{use_reranking}|{strategy}"
+   ```
+
+4. **Override config routing strategy** (`hybrid_retriever.py`)
+   ```python
+   # Respect config routing strategy override (for benchmarking/testing)
+   if self.config and self.config.routing.strategy == "vector_only":
+       skip_graph = True
+   elif self.config and self.config.routing.strategy == "graph_only":
+       skip_vector = True
+   elif self.config and self.config.routing.strategy == "hybrid":
+       skip_vector = False
+       skip_graph = False
+   ```
+
+5. **Benchmark force mode** (`tests/test_benchmark.py`)
+   - `retrieve_vector_only`: Force `strategy = "vector_only"`
+   - `retrieve_hybrid`: Force `strategy = "hybrid"` (vector + graph)
+
+### Fichiers modifiés
+
+| Fichier | Modifications |
+|---------|---------------|
+| `src/cognidoc/utils/advanced_rag.py` | Revert `_score_single_document` au format yes/no |
+| `src/cognidoc/constants.py` | `ENABLE_CROSS_ENCODER = false` par défaut |
+| `src/cognidoc/hybrid_retriever.py` | Cache key avec strategy + override config routing |
+| `tests/test_benchmark.py` | Force modes vector_only/hybrid pour benchmarking |
+| `tests/benchmark_results.json` | Résultats finaux |
+
+### Résultats benchmark (après fix)
+
+```
+======================================================================
+BENCHMARK SUMMARY
+======================================================================
+
+VECTOR_ONLY:
+  Queries: 10
+  Avg Latency: 8298.0 ms
+  Avg Keyword Hit Rate: 47.50%
+  Avg Topic Precision: 27.50%
+  MRR: 0.300
+
+HYBRID (vector + graph):
+  Queries: 10
+  Avg Latency: 8744.8 ms (+5.4%)
+  Avg Keyword Hit Rate: 54.00% (+13.7%)
+  Avg Topic Precision: 29.32% (+6.6%)
+  MRR: 0.323 (+7.5%)
+
+======================================================================
+```
+
+**Analyse:**
+- Hybrid montre une amélioration constante (+6-14% sur les métriques qualité)
+- Latence légèrement plus élevée (+5.4%) due au graph retrieval
+- Le reranking LLM (Gemini) fournit des scores continus permettant un vrai réordonnancement
+
+### Commits session 14
+
+| Hash | Description |
+|------|-------------|
+| `21ce650` | Fix reranking and benchmark accuracy |
+
+### Tests vérifiés
+
+```bash
+# Tous les tests passent
+pytest tests/test_benchmark.py -v --run-slow  # 10/10 ✅
+pytest tests/test_agent.py tests/test_complexity.py -v  # 52/52 ✅
+```
+
+### Configuration reranking
+
+| Mode | Constant | Comportement |
+|------|----------|--------------|
+| **Cross-encoder (désactivé)** | `ENABLE_CROSS_ENCODER=false` | Qwen3-Reranker yes/no (binaire, pas de réordonnancement) |
+| **LLM reranking (activé)** | `ENABLE_CROSS_ENCODER=false` | Gemini 1-10 scoring (continu, réordonnancement effectif) |
+
+Pour réactiver le cross-encoder (plus rapide mais moins précis):
+```bash
+ENABLE_CROSS_ENCODER=true python -m cognidoc.cognidoc_app
+```
