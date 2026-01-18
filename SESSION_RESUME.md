@@ -1433,3 +1433,71 @@ _qdrant_result_cache.clear()
 
 - **#4 (Parallel Complexity Eval)** : Non implémenté car `evaluate_complexity()` est déjà rule-based (~1ms)
 - **#11 (Embedding Batch Accumulation)** : Déjà implémenté via `embed_async()` pendant l'ingestion
+
+---
+
+## Session 13 - 18 janvier 2026
+
+### Analyse de la contextual compression
+
+**Problème initial:** Query 9 du benchmark prenait ~240s à cause de:
+1. Explosion des source_chunks (1282 chunks → 115K chars envoyés au LLM)
+2. Contextual compression ajoutant ~2-3s par chunk (appels LLM)
+
+### Recherche état de l'art
+
+Analyse des publications récentes sur la compression de contexte pour RAG:
+
+| Méthode | Source | Résultat |
+|---------|--------|----------|
+| **LLMLingua** | Microsoft | 20x compression, 1.5% perte de performance |
+| **LongLLMLingua** | Microsoft | 21.4% amélioration à 4x compression |
+| **xRAG** | NeurIPS 2024 | 10%+ amélioration, 3.53x réduction FLOP |
+| **ECoRAG** | - | Surpasse RAG non-compressé sur NQ, TQA, WQ |
+
+**Conclusions:**
+1. La compression peut améliorer la précision en supprimant le bruit
+2. Elle aide à mitiger le problème "lost in the middle"
+3. **Mais** : latence significative (+2-3s/chunk avec appels LLM)
+4. Bénéfice minimal pour des chunks déjà petits (512 tokens)
+
+### Décision: Désactivation par défaut
+
+**Raisons:**
+- Les chunks sont déjà pré-découpés (512 tokens max) → compression inutile
+- Le reranking + hiérarchie parent-child filtre déjà le bruit
+- Latence inacceptable pour l'UX (~2-3s par chunk)
+- LLMs modernes (128K+ contexte) gèrent facilement 5-10 chunks
+
+**Cas où activer la compression:**
+- Domaines très bruités (web scraping, forums)
+- Documents très longs (10K+ tokens) avant chunking
+- Modèles à contexte limité (4K tokens)
+
+### Modifications
+
+| Fichier | Changement |
+|---------|------------|
+| `src/cognidoc/constants.py` | `ENABLE_CONTEXTUAL_COMPRESSION` = `false` par défaut |
+
+### Configuration finale compression
+
+```python
+# Contextual Compression (disabled by default)
+ENABLE_CONTEXTUAL_COMPRESSION = os.getenv("ENABLE_CONTEXTUAL_COMPRESSION", "false").lower() == "true"
+COMPRESSION_MAX_TOKENS_PER_DOC = 200
+COMPRESSION_SKIP_RATIO = 0.5  # Skip docs < 50% of MAX_CHUNK_SIZE
+COMPRESSION_SKIP_THRESHOLD = MAX_CHUNK_SIZE * COMPRESSION_SKIP_RATIO  # 256 tokens
+```
+
+### Commits session 13
+
+| Hash | Description |
+|------|-------------|
+| `42c7c8f` | Disable contextual compression by default |
+
+### Améliorations futures
+
+- Envisager LLMLingua ou xRAG pour compression sans appel LLM
+- Compression au niveau token plutôt que document
+- Benchmark A/B avec/sans compression sur différents domaines

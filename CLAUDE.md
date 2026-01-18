@@ -626,6 +626,7 @@ All settings overridable via `.env`:
 - `TOP_K_RETRIEVED_CHILDREN`: 10
 - `TOP_K_RERANKED_PARENTS`: 5
 - `HYBRID_DENSE_WEIGHT`: 0.6 (dense vs BM25 balance)
+- `ENABLE_CONTEXTUAL_COMPRESSION`: false (disabled by default, enable for high-noise domains)
 
 ### MODEL_SPECS (`src/cognidoc/constants.py`)
 
