@@ -461,8 +461,8 @@ CROSS_ENCODER_BATCH_SIZE = int(os.getenv("CROSS_ENCODER_BATCH_SIZE", "10"))
 ENABLE_LOST_IN_MIDDLE_REORDER = os.getenv("ENABLE_LOST_IN_MIDDLE_REORDER", "true").lower() == "true"
 
 # Contextual Compression (extracts query-relevant content)
-# Disabled by default due to high latency (~50s per doc with Gemini)
-ENABLE_CONTEXTUAL_COMPRESSION = os.getenv("ENABLE_CONTEXTUAL_COMPRESSION", "false").lower() == "true"
+# Skips documents under COMPRESSION_SKIP_THRESHOLD words to avoid unnecessary LLM calls
+ENABLE_CONTEXTUAL_COMPRESSION = os.getenv("ENABLE_CONTEXTUAL_COMPRESSION", "true").lower() == "true"
 COMPRESSION_MAX_TOKENS_PER_DOC = int(os.getenv("COMPRESSION_MAX_TOKENS_PER_DOC", "200"))
 # Skip compression for documents under this word count (avoids LLM calls for small docs)
 COMPRESSION_SKIP_THRESHOLD = int(os.getenv("COMPRESSION_SKIP_THRESHOLD", "600"))
