@@ -734,6 +734,7 @@ async def run_ingestion_pipeline_async(
             checkpoint.set_stage("entity_extraction")
 
             # Get processed chunk IDs from checkpoint for resume
+            # Use set for O(1) lookup instead of O(n) list search
             processed_chunk_ids = set(checkpoint.entity_extraction.processed_item_ids)
 
             # Track progress for periodic checkpoint saving
@@ -742,8 +743,9 @@ async def run_ingestion_pipeline_async(
             def on_extraction_progress(chunk_id: str, success: bool, error_type: str = None):
                 """Callback to save checkpoint periodically during extraction."""
                 if success:
-                    # Add to checkpoint
-                    if chunk_id not in checkpoint.entity_extraction.processed_item_ids:
+                    # Add to checkpoint (use set for O(1) lookup, then sync to list)
+                    if chunk_id not in processed_chunk_ids:
+                        processed_chunk_ids.add(chunk_id)
                         checkpoint.entity_extraction.processed_item_ids.append(chunk_id)
                     chunks_since_last_save[0] += 1
 
