@@ -626,6 +626,7 @@ All settings overridable via `.env`:
 - `TOP_K_RETRIEVED_CHILDREN`: 10
 - `TOP_K_RERANKED_PARENTS`: 5
 - `HYBRID_DENSE_WEIGHT`: 0.6 (dense vs BM25 balance)
+- `OLLAMA_EMBED_MODEL`: qwen3-embedding:4b-q8_0 (Ollama embedding model)
 - `ENABLE_CONTEXTUAL_COMPRESSION`: false (disabled by default, enable for high-noise domains)
 
 ### MODEL_SPECS (`src/cognidoc/constants.py`)
@@ -676,7 +677,7 @@ def get_memory_window() -> int:
 Required Ollama models:
 ```bash
 ollama pull granite3.3:8b                   # LLM generation
-ollama pull qwen3-embedding:0.6b            # Embeddings
+ollama pull qwen3-embedding:4b-q8_0         # Embeddings (default)
 ollama pull ibm/granite-docling:258m-bf16   # Document parsing
 ollama pull qwen3-vl:8b-instruct            # Vision (optional)
 ```
@@ -733,27 +734,27 @@ Key options:
 
 ## Tests
 
-```bash
-# Run all tests (note: make test is not configured, use pytest directly)
-.venv/bin/python -m pytest tests/ -v
+**Important:** Qdrant embedded only allows one client per storage folder. The app and tests cannot run simultaneously against the same data directory.
 
-# Or with uv (if path has no spaces)
+```bash
+# Run all tests (use uv, or full path if project path has spaces)
 uv run pytest tests/ -v
+.venv/bin/python -m pytest tests/ -v   # Alternative
 
 # Run a single test file
-pytest tests/test_agent.py -v
+uv run pytest tests/test_agent.py -v
 
 # Run a single test function
-pytest tests/test_agent.py::test_agent_tool_parsing -v
+uv run pytest tests/test_agent.py::test_agent_tool_parsing -v
 
 # Run tests matching a pattern
-pytest tests/ -v -k "complexity"
+uv run pytest tests/ -v -k "complexity"
 
 # Run E2E tests only (~30s)
-pytest tests/test_00_e2e_pipeline.py -v
+uv run pytest tests/test_00_e2e_pipeline.py -v
 
 # Run full E2E with ingestion (~2-5 min)
-pytest tests/test_00_e2e_pipeline.py -v --run-slow
+uv run pytest tests/test_00_e2e_pipeline.py -v --run-slow
 ```
 
 | Module | Tests | Description |
