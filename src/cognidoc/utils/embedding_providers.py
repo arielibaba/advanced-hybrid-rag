@@ -32,7 +32,7 @@ class EmbeddingProvider(str, Enum):
 
 # Default models per provider
 DEFAULT_EMBEDDING_MODELS = {
-    EmbeddingProvider.OLLAMA: "qwen3-embedding:0.6b",
+    EmbeddingProvider.OLLAMA: os.getenv("EMBED_MODEL", "qwen3-embedding:4b-q8_0"),
     EmbeddingProvider.OPENAI: "text-embedding-3-small",
     EmbeddingProvider.GEMINI: "text-embedding-004",
 }

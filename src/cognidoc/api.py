@@ -83,10 +83,10 @@ class CogniDocConfig:
             try:
                 provider = EmbeddingProvider(self.embedding_provider)
                 self.embedding_model = DEFAULT_EMBEDDING_MODELS.get(
-                    provider, "qwen3-embedding:0.6b"
+                    provider, "qwen3-embedding:4b-q8_0"
                 )
             except ValueError:
-                self.embedding_model = "qwen3-embedding:0.6b"
+                self.embedding_model = "qwen3-embedding:4b-q8_0"
 
         # Vision uses LLM provider by default
         if self.vision_provider is None:
