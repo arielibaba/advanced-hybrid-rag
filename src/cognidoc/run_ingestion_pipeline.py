@@ -52,6 +52,7 @@ from .constants import (
     DEFAULT_VISION_PROVIDER,
     CHECKPOINT_FILE,
     MAX_CONSECUTIVE_QUOTA_ERRORS,
+    CHECKPOINT_SAVE_INTERVAL,
 )
 from .checkpoint import PipelineCheckpoint, FailedItem
 
@@ -735,6 +736,23 @@ async def run_ingestion_pipeline_async(
             # Get processed chunk IDs from checkpoint for resume
             processed_chunk_ids = set(checkpoint.entity_extraction.processed_item_ids)
 
+            # Track progress for periodic checkpoint saving
+            chunks_since_last_save = [0]  # Use list for mutable closure
+
+            def on_extraction_progress(chunk_id: str, success: bool, error_type: str = None):
+                """Callback to save checkpoint periodically during extraction."""
+                if success:
+                    # Add to checkpoint
+                    if chunk_id not in checkpoint.entity_extraction.processed_item_ids:
+                        checkpoint.entity_extraction.processed_item_ids.append(chunk_id)
+                    chunks_since_last_save[0] += 1
+
+                    # Save checkpoint every N chunks
+                    if chunks_since_last_save[0] >= CHECKPOINT_SAVE_INTERVAL:
+                        checkpoint.save(checkpoint_path)
+                        logger.debug(f"Checkpoint saved ({len(checkpoint.entity_extraction.processed_item_ids)} chunks processed)")
+                        chunks_since_last_save[0] = 0
+
             # Extract entities and relationships from chunks
             # Default: extract from parent chunks (512 tokens) + descriptions, skip children (64 tokens)
             if use_async_extraction:
@@ -746,6 +764,7 @@ async def run_ingestion_pipeline_async(
                     show_progress=True,
                     processed_chunk_ids=processed_chunk_ids,
                     max_consecutive_quota_errors=max_consecutive_quota_errors,
+                    on_progress_callback=on_extraction_progress,
                 )
 
                 # Update checkpoint with extraction state
