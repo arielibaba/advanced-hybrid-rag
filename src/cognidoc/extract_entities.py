@@ -355,9 +355,9 @@ def extract_entities_from_text(
                 continue
 
             entity = Entity(
-                name=e.get("name", "").strip(),
-                type=e.get("type", "").strip(),
-                description=e.get("description", "").strip(),
+                name=(e.get("name") or "").strip(),
+                type=(e.get("type") or "").strip(),
+                description=(e.get("description") or "").strip(),
                 confidence=confidence,
                 source_chunk=chunk_id,
             )
@@ -421,8 +421,8 @@ def extract_relationships_from_text(
             if confidence < config.extraction.min_confidence:
                 continue
 
-            source = r.get("source", "").strip()
-            target = r.get("target", "").strip()
+            source = (r.get("source") or "").strip()
+            target = (r.get("target") or "").strip()
 
             # Validate entities exist
             if source.lower() not in entity_names or target.lower() not in entity_names:
@@ -431,8 +431,8 @@ def extract_relationships_from_text(
             rel = Relationship(
                 source_entity=source,
                 target_entity=target,
-                relationship_type=r.get("type", "RELATED_TO").strip(),
-                description=r.get("description", "").strip(),
+                relationship_type=(r.get("type") or "RELATED_TO").strip(),
+                description=(r.get("description") or "").strip(),
                 confidence=confidence,
                 source_chunk=chunk_id,
             )
@@ -605,9 +605,9 @@ async def extract_entities_from_text_async(
                 continue
 
             entity = Entity(
-                name=e.get("name", "").strip(),
-                type=e.get("type", "").strip(),
-                description=e.get("description", "").strip(),
+                name=(e.get("name") or "").strip(),
+                type=(e.get("type") or "").strip(),
+                description=(e.get("description") or "").strip(),
                 confidence=confidence,
                 source_chunk=chunk_id,
             )
@@ -671,8 +671,8 @@ async def extract_relationships_from_text_async(
             if confidence < config.extraction.min_confidence:
                 continue
 
-            source = r.get("source", "").strip()
-            target = r.get("target", "").strip()
+            source = (r.get("source") or "").strip()
+            target = (r.get("target") or "").strip()
 
             # Validate entities exist
             if source.lower() not in entity_names or target.lower() not in entity_names:
@@ -681,8 +681,8 @@ async def extract_relationships_from_text_async(
             rel = Relationship(
                 source_entity=source,
                 target_entity=target,
-                relationship_type=r.get("type", "RELATED_TO").strip(),
-                description=r.get("description", "").strip(),
+                relationship_type=(r.get("type") or "RELATED_TO").strip(),
+                description=(r.get("description") or "").strip(),
                 confidence=confidence,
                 source_chunk=chunk_id,
             )
