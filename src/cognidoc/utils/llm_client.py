@@ -21,7 +21,9 @@ from .logger import logger
 
 # Global LLM client (lazy-loaded singleton)
 _llm_client: Optional[BaseLLMProvider] = None
-_executor = ThreadPoolExecutor(max_workers=4)
+# Thread pool for async LLM calls - sized to match max entity extraction concurrency (8)
+# The semaphore in extract_entities.py controls actual concurrency, this just provides threads
+_executor = ThreadPoolExecutor(max_workers=8)
 
 
 def get_llm_client() -> BaseLLMProvider:

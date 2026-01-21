@@ -985,21 +985,43 @@ async def extract_from_chunks_dir_async(
 
                 return None
 
-    # Process chunks sequentially with progress tracking to enable early stopping
-    # (Using gather would process all tasks even after we want to stop)
+    # Process chunks concurrently using as_completed for early stopping support
+    # This allows true parallelism while still checking for quota errors after each completion
     if show_progress:
         pbar = tqdm(total=len(chunk_files), desc="Entity extraction", unit="chunk")
 
-    for chunk_file in chunk_files:
-        if should_stop:
-            break
+    # Create all tasks upfront - semaphore controls actual concurrency
+    tasks = {asyncio.create_task(process_chunk(chunk_file)): chunk_file for chunk_file in chunk_files}
+    pending = set(tasks.keys())
 
-        result = await process_chunk(chunk_file)
-        if result is not None and (result.entities or result.relationships):
-            results.append(result)
+    try:
+        for coro in asyncio.as_completed(pending):
+            if should_stop:
+                # Cancel remaining tasks when stopping early
+                for task in pending:
+                    if not task.done():
+                        task.cancel()
+                break
 
-        if show_progress:
-            pbar.update(1)
+            try:
+                result = await coro
+                if result is not None and (result.entities or result.relationships):
+                    results.append(result)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Task failed with unexpected error: {e}")
+
+            if show_progress:
+                pbar.update(1)
+    finally:
+        # Ensure all tasks are properly cancelled on exit
+        for task in pending:
+            if not task.done():
+                task.cancel()
+        # Wait for cancellations to complete
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     if show_progress:
         pbar.close()
