@@ -264,7 +264,7 @@ YOLO detection requires `models/YOLOv11/yolov11x_best.pt` (~109 MB, gitignored).
 
 | Module | Tests | Description |
 |--------|-------|-------------|
-| `test_00_e2e_pipeline.py` | 9 | E2E pipeline (runs first to avoid Qdrant lock) |
+| `test_00_e2e_pipeline.py` | 10 | E2E pipeline (runs first to avoid Qdrant lock) |
 | `test_agent.py` | 27 | Agent ReAct loop |
 | `test_agent_tools.py` | 33 | Tool implementations |
 | `test_benchmark.py` | 10 | Precision/recall benchmark |
@@ -273,7 +273,7 @@ YOLO detection requires `models/YOLOv11/yolov11x_best.pt` (~109 MB, gitignored).
 | `test_e2e_language_and_count.py` | 24 | Language detection (FR/EN/ES/DE) |
 | `test_entity_resolution.py` | 34 | Entity resolution (blocking, matching, clustering, merging) |
 | `test_helpers.py` | 34 | Token counting, chat history, query parsing |
-| `test_optimizations.py` | 21 | Pipeline optimizations (concurrency, pooling) |
+| `test_optimizations.py` | 26 | Pipeline optimizations (concurrency, pooling) |
 | `test_providers.py` | 32 | LLM/Embedding providers |
 
 **Test Infrastructure:**
