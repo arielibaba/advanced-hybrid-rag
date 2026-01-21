@@ -22,6 +22,7 @@ Batch processing:
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 from tqdm import tqdm
@@ -310,11 +311,20 @@ class DetectionProcessor:
 
         results_list = []
 
-        # Load all images first
+        # Load all images in parallel (I/O-bound, benefits from threading)
+        def load_image(path: Path) -> Tuple[Path, Optional[np.ndarray]]:
+            image = cv2.imread(str(path))
+            return (path, image)
+
         images_data = []
         valid_paths = []
-        for image_path in image_paths:
-            image = cv2.imread(str(image_path))
+
+        # Use ThreadPoolExecutor for parallel image loading
+        # This significantly speeds up batch processing for large batches
+        with ThreadPoolExecutor(max_workers=min(len(image_paths), 4)) as executor:
+            loaded = list(executor.map(load_image, image_paths))
+
+        for image_path, image in loaded:
             if image is None:
                 logger.error(f"Failed to read image: {image_path}")
                 continue
