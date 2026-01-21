@@ -71,6 +71,7 @@ from .build_indexes import build_indexes
 from .extract_entities import extract_from_chunks_dir, run_extraction_async, save_extraction_results
 from .knowledge_graph import build_knowledge_graph
 from .graph_config import get_graph_config
+from .entity_resolution import resolve_entities
 
 import ollama
 
@@ -379,6 +380,11 @@ def parse_args():
         help="Skip knowledge graph building (GraphRAG)"
     )
     parser.add_argument(
+        "--skip-resolution",
+        action="store_true",
+        help="Skip entity resolution (semantic deduplication)"
+    )
+    parser.add_argument(
         "--graph-config",
         type=str,
         default=None,
@@ -424,6 +430,7 @@ async def run_ingestion_pipeline_async(
     use_cache: bool = True,
     skip_indexing: bool = False,
     skip_graph: bool = False,
+    skip_resolution: bool = False,
     graph_config_path: str = None,
     yolo_batch_size: int = 2,
     use_yolo_batching: bool = True,
@@ -451,6 +458,7 @@ async def run_ingestion_pipeline_async(
         use_cache: Use embedding cache
         skip_indexing: Skip vector index building
         skip_graph: Skip knowledge graph building
+        skip_resolution: Skip entity resolution (semantic deduplication)
         yolo_batch_size: YOLO batch size (default: 2)
         use_yolo_batching: Enable YOLO batch processing (default: True)
         entity_max_concurrent: Max concurrent entity extractions (default: 4)
@@ -871,6 +879,41 @@ async def run_ingestion_pipeline_async(
                     )
                     stats["graph_building"] = {"status": "interrupted", "reason": "quota_exhausted"}
                 else:
+                    # Entity resolution (semantic deduplication)
+                    if not skip_resolution and graph_config.entity_resolution.enabled:
+                        pipeline_timer.stage("entity_resolution")
+                        logger.info("Running entity resolution (semantic deduplication)...")
+
+                        try:
+                            resolution_result = await resolve_entities(
+                                kg,
+                                config=graph_config.entity_resolution,
+                                show_progress=True,
+                            )
+
+                            stats["entity_resolution"] = {
+                                "original_entities": resolution_result.original_entity_count,
+                                "final_entities": resolution_result.final_entity_count,
+                                "candidates_found": resolution_result.candidates_found,
+                                "clusters_merged": resolution_result.clusters_found,
+                                "entities_merged": resolution_result.entities_merged,
+                                "llm_calls": resolution_result.llm_calls_made,
+                                "cache_hits": resolution_result.cache_hits,
+                                "duration_seconds": resolution_result.duration_seconds,
+                            }
+
+                            logger.info(
+                                f"Entity resolution: {resolution_result.original_entity_count} → "
+                                f"{resolution_result.final_entity_count} entities "
+                                f"({resolution_result.entities_merged} merged)"
+                            )
+                        except Exception as e:
+                            logger.error(f"Entity resolution failed: {e}")
+                            stats["entity_resolution"] = {"status": "failed", "error": str(e)}
+                            # Continue - resolution failure shouldn't stop pipeline
+                    else:
+                        logger.info("Skipping entity resolution")
+
                     # Save completed graph
                     kg.save()
 
@@ -925,6 +968,7 @@ def main():
         use_cache=not args.no_cache,
         skip_indexing=args.skip_indexing,
         skip_graph=args.skip_graph,
+        skip_resolution=args.skip_resolution,
         graph_config_path=args.graph_config,
         # Performance optimization parameters
         yolo_batch_size=args.yolo_batch_size,

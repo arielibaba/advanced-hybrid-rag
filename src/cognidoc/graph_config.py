@@ -90,6 +90,69 @@ class CustomPrompts:
 
 
 @dataclass
+class EntityResolutionConfig:
+    """
+    Entity resolution settings for semantic deduplication.
+
+    The resolution process has 4 phases:
+    1. Blocking: Find candidate pairs using embedding similarity
+    2. Matching: Verify candidates using LLM with relationship context
+    3. Clustering: Build equivalence clusters via transitive closure
+    4. Merging: Merge entities with full information enrichment
+    """
+    # Enable/disable entity resolution
+    enabled: bool = True
+
+    # Phase 1: Blocking - cosine similarity threshold for candidates
+    # Lower = more candidates (higher recall, more LLM calls)
+    # Higher = fewer candidates (higher precision, fewer LLM calls)
+    similarity_threshold: float = 0.75
+
+    # Phase 2: Matching - minimum LLM confidence to merge
+    llm_confidence_threshold: float = 0.7
+
+    # Maximum concurrent LLM calls for verification
+    max_concurrent_llm: int = 4
+
+    # Phase 4: Merging - use LLM to synthesize merged descriptions
+    # If False, uses smart concatenation instead (faster, cheaper)
+    use_llm_for_descriptions: bool = True
+
+    # Batch size for embedding computation
+    batch_size: int = 500
+
+    # Cache LLM resolution decisions
+    cache_decisions: bool = True
+
+    # Cache TTL in hours
+    cache_ttl_hours: int = 24
+
+    @classmethod
+    def from_env(cls) -> "EntityResolutionConfig":
+        """Create config from environment variables."""
+        from .constants import (
+            ENABLE_ENTITY_RESOLUTION,
+            ENTITY_RESOLUTION_SIMILARITY_THRESHOLD,
+            ENTITY_RESOLUTION_LLM_CONFIDENCE,
+            ENTITY_RESOLUTION_MAX_CONCURRENT,
+            ENTITY_RESOLUTION_USE_LLM_DESCRIPTIONS,
+            ENTITY_RESOLUTION_CACHE_ENABLED,
+            ENTITY_RESOLUTION_CACHE_TTL_HOURS,
+            ENTITY_RESOLUTION_BATCH_SIZE,
+        )
+        return cls(
+            enabled=ENABLE_ENTITY_RESOLUTION,
+            similarity_threshold=ENTITY_RESOLUTION_SIMILARITY_THRESHOLD,
+            llm_confidence_threshold=ENTITY_RESOLUTION_LLM_CONFIDENCE,
+            max_concurrent_llm=ENTITY_RESOLUTION_MAX_CONCURRENT,
+            use_llm_for_descriptions=ENTITY_RESOLUTION_USE_LLM_DESCRIPTIONS,
+            batch_size=ENTITY_RESOLUTION_BATCH_SIZE,
+            cache_decisions=ENTITY_RESOLUTION_CACHE_ENABLED,
+            cache_ttl_hours=ENTITY_RESOLUTION_CACHE_TTL_HOURS,
+        )
+
+
+@dataclass
 class GraphConfig:
     """Complete graph configuration."""
     domain: DomainConfig = field(default_factory=DomainConfig)
@@ -99,6 +162,7 @@ class GraphConfig:
     graph: GraphSettings = field(default_factory=GraphSettings)
     routing: RoutingConfig = field(default_factory=RoutingConfig)
     custom_prompts: CustomPrompts = field(default_factory=CustomPrompts)
+    entity_resolution: EntityResolutionConfig = field(default_factory=EntityResolutionConfig)
 
     def get_entity_type(self, name: str) -> Optional[EntityType]:
         """Get entity type by name."""
@@ -218,6 +282,34 @@ def load_graph_config(config_path: Optional[str] = None) -> GraphConfig:
         community_summary=prompts_data.get("community_summary", ""),
     )
 
+    # Parse entity resolution settings (with env var defaults)
+    resolution_data = data.get("entity_resolution", {})
+    # Start with env-based defaults, then override with YAML values
+    entity_resolution = EntityResolutionConfig.from_env()
+    if resolution_data:
+        entity_resolution = EntityResolutionConfig(
+            enabled=resolution_data.get("enabled", entity_resolution.enabled),
+            similarity_threshold=resolution_data.get(
+                "similarity_threshold", entity_resolution.similarity_threshold
+            ),
+            llm_confidence_threshold=resolution_data.get(
+                "llm_confidence_threshold", entity_resolution.llm_confidence_threshold
+            ),
+            max_concurrent_llm=resolution_data.get(
+                "max_concurrent_llm", entity_resolution.max_concurrent_llm
+            ),
+            use_llm_for_descriptions=resolution_data.get(
+                "use_llm_for_descriptions", entity_resolution.use_llm_for_descriptions
+            ),
+            batch_size=resolution_data.get("batch_size", entity_resolution.batch_size),
+            cache_decisions=resolution_data.get(
+                "cache_decisions", entity_resolution.cache_decisions
+            ),
+            cache_ttl_hours=resolution_data.get(
+                "cache_ttl_hours", entity_resolution.cache_ttl_hours
+            ),
+        )
+
     return GraphConfig(
         domain=domain,
         entities=entities,
@@ -226,6 +318,7 @@ def load_graph_config(config_path: Optional[str] = None) -> GraphConfig:
         graph=graph_settings,
         routing=routing,
         custom_prompts=custom_prompts,
+        entity_resolution=entity_resolution,
     )
 
 

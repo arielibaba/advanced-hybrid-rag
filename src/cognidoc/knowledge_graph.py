@@ -34,13 +34,15 @@ class GraphNode:
 
     Attributes:
         id: Unique identifier for the node
-        name: Human-readable name of the entity
+        name: Human-readable name of the entity (canonical name after resolution)
         type: Entity type (e.g., "PERSON", "CONCEPT")
         description: Brief description of the entity
         attributes: Additional key-value attributes
         source_chunks: List of chunk IDs where this entity was found
         community_id: ID of the community this node belongs to
         embedding: Pre-computed embedding vector for similarity search
+        aliases: Alternative names for this entity (populated by entity resolution)
+        merged_from: List of original entity IDs that were merged into this one
     """
     id: str
     name: str
@@ -50,6 +52,8 @@ class GraphNode:
     source_chunks: List[str] = field(default_factory=list)
     community_id: Optional[int] = None
     embedding: Optional[List[float]] = None
+    aliases: List[str] = field(default_factory=list)
+    merged_from: List[str] = field(default_factory=list)
 
     def __hash__(self):
         """Make GraphNode hashable by using its id."""
@@ -60,6 +64,13 @@ class GraphNode:
         if isinstance(other, GraphNode):
             return self.id == other.id
         return False
+
+    def matches_name(self, query: str) -> bool:
+        """Check if query matches name or any alias (case-insensitive)."""
+        query_lower = query.lower().strip()
+        if self.name.lower().strip() == query_lower:
+            return True
+        return any(alias.lower().strip() == query_lower for alias in self.aliases)
 
 
 @dataclass
@@ -863,7 +874,7 @@ SUMMARY:"""
         with open(save_path / "graph.gpickle", "wb") as f:
             pickle.dump(self.graph, f, pickle.HIGHEST_PROTOCOL)
 
-        # Save nodes (including pre-computed embeddings)
+        # Save nodes (including pre-computed embeddings and resolution data)
         nodes_data = {nid: {
             "id": n.id,
             "name": n.name,
@@ -873,6 +884,8 @@ SUMMARY:"""
             "source_chunks": n.source_chunks,
             "community_id": n.community_id,
             "embedding": n.embedding,
+            "aliases": n.aliases,
+            "merged_from": n.merged_from,
         } for nid, n in self.nodes.items()}
 
         with open(save_path / "nodes.json", "w", encoding="utf-8") as f:
@@ -931,6 +944,8 @@ SUMMARY:"""
                     source_chunks=data.get("source_chunks", []),
                     community_id=data.get("community_id"),
                     embedding=data.get("embedding"),  # Load pre-computed embedding
+                    aliases=data.get("aliases", []),  # Load aliases from resolution
+                    merged_from=data.get("merged_from", []),  # Load merge history
                 )
 
         # Load communities

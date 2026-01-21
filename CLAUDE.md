@@ -61,6 +61,7 @@ Resume from specific stage:
 --skip-embeddings     # Skip embedding generation
 --skip-indexing       # Skip vector index building
 --skip-graph          # Skip knowledge graph building
+--skip-resolution     # Skip entity resolution (semantic deduplication)
 --force-reembed       # Re-embed all (ignore cache)
 ```
 
@@ -82,6 +83,7 @@ Source code is in `src/cognidoc/` but installs as `cognidoc` package:
 | `cognidoc_app.py` | Gradio chat with FastAPI static file serving |
 | `hybrid_retriever.py` | Vector + Graph fusion with query orchestration and caching |
 | `knowledge_graph.py` | NetworkX graph with Louvain community detection |
+| `entity_resolution.py` | Semantic entity deduplication (4-phase: blocking, matching, clustering, merging) |
 | `query_orchestrator.py` | LLM-based query classification and routing |
 | `complexity.py` | Query complexity evaluation for agentic routing |
 | `agent.py` | ReAct agent with parallel reflection for complex queries |
@@ -269,6 +271,7 @@ YOLO detection requires `models/YOLOv11/yolov11x_best.pt` (~109 MB, gitignored).
 | `test_checkpoint.py` | 32 | Checkpoint/resume system |
 | `test_complexity.py` | 25 | Query complexity evaluation |
 | `test_e2e_language_and_count.py` | 24 | Language detection (FR/EN/ES/DE) |
+| `test_entity_resolution.py` | 34 | Entity resolution (blocking, matching, clustering, merging) |
 | `test_helpers.py` | 34 | Token counting, chat history, query parsing |
 | `test_optimizations.py` | 21 | Pipeline optimizations (concurrency, pooling) |
 | `test_providers.py` | 32 | LLM/Embedding providers |

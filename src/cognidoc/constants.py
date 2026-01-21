@@ -502,6 +502,54 @@ MAX_CONSECUTIVE_QUOTA_ERRORS = int(os.getenv("MAX_CONSECUTIVE_QUOTA_ERRORS", "5"
 CHECKPOINT_SAVE_INTERVAL = int(os.getenv("CHECKPOINT_SAVE_INTERVAL", "10"))
 
 # =============================================================================
+# Entity Resolution Configuration
+# =============================================================================
+
+# Enable entity resolution after graph building
+ENABLE_ENTITY_RESOLUTION = os.getenv("ENABLE_ENTITY_RESOLUTION", "true").lower() == "true"
+
+# Similarity threshold for candidate pair detection (cosine similarity)
+# Lower = more candidates (higher recall, more LLM calls)
+# Higher = fewer candidates (higher precision, fewer LLM calls)
+ENTITY_RESOLUTION_SIMILARITY_THRESHOLD = float(
+    os.getenv("ENTITY_RESOLUTION_SIMILARITY_THRESHOLD", "0.75")
+)
+
+# Minimum LLM confidence to merge entities
+ENTITY_RESOLUTION_LLM_CONFIDENCE = float(
+    os.getenv("ENTITY_RESOLUTION_LLM_CONFIDENCE", "0.7")
+)
+
+# Maximum concurrent LLM calls for entity resolution
+ENTITY_RESOLUTION_MAX_CONCURRENT = int(
+    os.getenv("ENTITY_RESOLUTION_MAX_CONCURRENT", "4")
+)
+
+# Use LLM to synthesize merged descriptions (vs simple concatenation)
+ENTITY_RESOLUTION_USE_LLM_DESCRIPTIONS = (
+    os.getenv("ENTITY_RESOLUTION_USE_LLM_DESCRIPTIONS", "true").lower() == "true"
+)
+
+# Cache entity resolution decisions to avoid redundant LLM calls
+ENTITY_RESOLUTION_CACHE_ENABLED = (
+    os.getenv("ENTITY_RESOLUTION_CACHE_ENABLED", "true").lower() == "true"
+)
+
+# Cache TTL for resolution decisions (hours)
+ENTITY_RESOLUTION_CACHE_TTL_HOURS = int(
+    os.getenv("ENTITY_RESOLUTION_CACHE_TTL_HOURS", "24")
+)
+
+# Batch size for embedding computation
+ENTITY_RESOLUTION_BATCH_SIZE = int(
+    os.getenv("ENTITY_RESOLUTION_BATCH_SIZE", "500")
+)
+
+# Prompt files for entity resolution
+ENTITY_RESOLUTION_PROMPT = PACKAGE_DIR / "prompts/entity_resolution.txt"
+DESCRIPTION_MERGE_PROMPT = PACKAGE_DIR / "prompts/description_merge.txt"
+
+# =============================================================================
 # Convert Path objects to strings for external use
 # =============================================================================
 
@@ -524,6 +572,8 @@ CACHE_DIR = str(CACHE_DIR.resolve())
 TOOL_CACHE_DB = str(TOOL_CACHE_DB.resolve())
 METRICS_DB = str(METRICS_DB.resolve())
 CHECKPOINT_FILE = str(CHECKPOINT_FILE.resolve())
+ENTITY_RESOLUTION_PROMPT = str(ENTITY_RESOLUTION_PROMPT.resolve())
+DESCRIPTION_MERGE_PROMPT = str(DESCRIPTION_MERGE_PROMPT.resolve())
 
 # Ensure directories exist
 Path(SOURCES_DIR).mkdir(parents=True, exist_ok=True)

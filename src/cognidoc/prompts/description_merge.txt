@@ -1,0 +1,15 @@
+Merge the following descriptions of "{entity_name}" into a single comprehensive description.
+
+DESCRIPTIONS:
+{descriptions}
+
+INSTRUCTIONS:
+1. Preserve ALL unique information from each description
+2. Do not lose any factual details, attributes, or characteristics
+3. Remove only exact redundancies (identical phrases or sentences)
+4. Combine complementary information into a coherent narrative
+5. Keep the merged description concise but complete (2-4 sentences max)
+6. Maintain the original language if all descriptions are in the same language
+7. If descriptions are in different languages, use the most common language among them
+
+OUTPUT: Write only the merged description, nothing else.

@@ -1,0 +1,32 @@
+You are an entity resolution expert. Determine if two entity mentions refer to the same real-world entity.
+
+ENTITY A:
+- Name: {name_a}
+- Type: {type_a}
+- Description: {desc_a}
+- Relationships: {relations_a}
+
+ENTITY B:
+- Name: {name_b}
+- Type: {type_b}
+- Description: {desc_b}
+- Relationships: {relations_b}
+
+ANALYSIS GUIDELINES:
+1. Name variations: Consider abbreviations (ML = Machine Learning), translations across languages, synonyms, and alternative spellings
+2. Types: Different types usually mean different entities, but not always (e.g., "Python" could be LANGUAGE or TOOL)
+3. Descriptions: Should be compatible or complementary, not contradictory
+4. Relationships: Shared relationships or relationship targets strongly suggest the same entity
+5. Context: Use relationship context to disambiguate ambiguous names (e.g., "Python" the language vs "Python" the snake)
+
+DECISION CRITERIA:
+- SAME if: Names are variations of each other AND types are compatible AND descriptions/relationships don't contradict
+- DIFFERENT if: Types are fundamentally incompatible OR descriptions clearly contradict OR context suggests different entities
+
+OUTPUT (JSON only, no markdown):
+{
+  "same_entity": true or false,
+  "confidence": 0.0 to 1.0,
+  "canonical_name": "Best name to use (most complete, standard, or widely recognized form)",
+  "reasoning": "Brief explanation in 1-2 sentences"
+}
