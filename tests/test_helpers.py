@@ -71,8 +71,9 @@ class TestLimitChatHistory:
     def test_truncates_long_history(self):
         """Long history should be truncated from the beginning."""
         from cognidoc.helpers import limit_chat_history
+        # Use spaces to create many words, ensuring truncation with word-based fallback
         history = [
-            {"role": "user", "content": "Message " + str(i) * 100}
+            {"role": "user", "content": " ".join(["word"] * 50) + f" msg{i}"}
             for i in range(100)
         ]
         result = limit_chat_history(history, max_tokens=500)
