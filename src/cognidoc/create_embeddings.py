@@ -227,6 +227,8 @@ async def embed_batch_async(
     """
     Embed a batch of chunks asynchronously.
 
+    Uses a shared HTTP client with connection pooling for improved performance.
+
     Args:
         chunks: List of chunks to embed
         embeddings_path: Output directory
@@ -246,11 +248,17 @@ async def embed_batch_async(
 
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def process_chunk(chunk: ChunkToEmbed) -> bool:
-        nonlocal success, errors
-        async with semaphore:
-            try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+    # Create shared HTTP client with connection pooling
+    # This avoids the overhead of creating a new connection per chunk
+    async with httpx.AsyncClient(
+        timeout=60.0,
+        limits=httpx.Limits(max_connections=max_concurrent, max_keepalive_connections=max_concurrent)
+    ) as client:
+
+        async def process_chunk(chunk: ChunkToEmbed) -> bool:
+            nonlocal success, errors
+            async with semaphore:
+                try:
                     response = await client.post(
                         f"{host}/api/embeddings",
                         json={"model": embed_model, "prompt": chunk.text}
@@ -258,25 +266,26 @@ async def embed_batch_async(
                     response.raise_for_status()
                     embedding = response.json()["embedding"]
 
-                # Cache the result
-                if cache:
-                    cache.set(chunk.text, embedding, embed_model)
+                    # Cache the result
+                    if cache:
+                        cache.set(chunk.text, embedding, embed_model)
 
-                # Write to file
-                data = {"embedding": embedding, "metadata": chunk.metadata}
-                embedding_file = embeddings_path / f"{chunk.file_path.stem}_embedding.json"
-                with open(embedding_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f)
+                    # Write to file
+                    data = {"embedding": embedding, "metadata": chunk.metadata}
+                    embedding_file = embeddings_path / f"{chunk.file_path.stem}_embedding.json"
+                    with open(embedding_file, "w", encoding="utf-8") as f:
+                        json.dump(data, f)
 
-                success += 1
-                return True
+                    success += 1
+                    return True
 
-            except Exception as e:
-                logger.error(f"Error embedding {chunk.file_path.name}: {e}")
-                errors += 1
-                return False
+                except Exception as e:
+                    logger.error(f"Error embedding {chunk.file_path.name}: {e}")
+                    errors += 1
+                    return False
 
-    await asyncio.gather(*[process_chunk(c) for c in chunks])
+        await asyncio.gather(*[process_chunk(c) for c in chunks])
+
     return success, errors
 
 
