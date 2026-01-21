@@ -643,7 +643,7 @@ def create_llm_provider(config: LLMConfig) -> BaseLLMProvider:
     return provider_class(config)
 
 
-# Default models per provider
+# Default models per provider (fallback if env vars not set)
 _DEFAULT_MODELS = {
     "gemini": "gemini-2.5-flash",
     "ollama": "granite3.3:8b",
@@ -658,20 +658,54 @@ _DEFAULT_VISION_MODELS = {
     "anthropic": "claude-sonnet-4-20250514",
 }
 
+# Environment variable names for provider-specific models
+_MODEL_ENV_VARS = {
+    "gemini": "GEMINI_LLM_MODEL",
+    "ollama": "OLLAMA_LLM_MODEL",
+    "openai": "OPENAI_LLM_MODEL",
+    "anthropic": "ANTHROPIC_LLM_MODEL",
+}
 
-def _get_default_model_for_provider(provider: str, vision: bool = False) -> str:
-    """Get the default model name for a given provider."""
-    models = _DEFAULT_VISION_MODELS if vision else _DEFAULT_MODELS
-    return models.get(provider, models["gemini"])
+_VISION_MODEL_ENV_VARS = {
+    "gemini": "GEMINI_VISION_MODEL",
+    "ollama": "OLLAMA_VISION_MODEL",
+    "openai": "OPENAI_VISION_MODEL",
+    "anthropic": "ANTHROPIC_VISION_MODEL",
+}
+
+
+def _get_model_for_provider(provider: str, vision: bool = False) -> str:
+    """
+    Get the model name for a given provider.
+
+    Priority order:
+    1. Provider-specific env var (e.g., OLLAMA_LLM_MODEL)
+    2. Built-in default for that provider
+
+    This ensures that when switching providers at runtime (e.g., DEFAULT_LLM_PROVIDER=ollama),
+    the correct model for that provider is used, even if DEFAULT_LLM_MODEL is set to a
+    different provider's model in .env.
+    """
+    env_vars = _VISION_MODEL_ENV_VARS if vision else _MODEL_ENV_VARS
+    defaults = _DEFAULT_VISION_MODELS if vision else _DEFAULT_MODELS
+
+    # Check provider-specific env var first
+    env_var = env_vars.get(provider)
+    if env_var:
+        model = os.getenv(env_var)
+        if model:
+            return model
+
+    # Fall back to built-in default
+    return defaults.get(provider, defaults["gemini"])
 
 
 # Convenience functions for common configurations
 def get_default_generation_provider() -> BaseLLMProvider:
     """Get the default generation provider with auto-loaded model specs."""
     provider = os.getenv("DEFAULT_LLM_PROVIDER", "gemini").lower()
-    # Use provider-specific default model if DEFAULT_LLM_MODEL is not set
-    default_model = _get_default_model_for_provider(provider)
-    model = os.getenv("DEFAULT_LLM_MODEL", default_model)
+    # Use provider-specific model (from env var or built-in default)
+    model = _get_model_for_provider(provider)
 
     # Use from_model to auto-load specs, but allow env overrides
     config = LLMConfig.from_model(
@@ -686,9 +720,8 @@ def get_default_generation_provider() -> BaseLLMProvider:
 def get_default_vision_provider() -> BaseLLMProvider:
     """Get the default vision provider with auto-loaded model specs."""
     provider = os.getenv("DEFAULT_VISION_PROVIDER", "gemini").lower()
-    # Use provider-specific default model if DEFAULT_VISION_MODEL is not set
-    default_model = _get_default_model_for_provider(provider, vision=True)
-    model = os.getenv("DEFAULT_VISION_MODEL", default_model)
+    # Use provider-specific model (from env var or built-in default)
+    model = _get_model_for_provider(provider, vision=True)
 
     # Use from_model to auto-load specs, with lower temperature for vision
     config = LLMConfig.from_model(
