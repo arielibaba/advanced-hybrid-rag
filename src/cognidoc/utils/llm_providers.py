@@ -643,11 +643,35 @@ def create_llm_provider(config: LLMConfig) -> BaseLLMProvider:
     return provider_class(config)
 
 
+# Default models per provider
+_DEFAULT_MODELS = {
+    "gemini": "gemini-2.5-flash",
+    "ollama": "granite3.3:8b",
+    "openai": "gpt-4o",
+    "anthropic": "claude-sonnet-4-20250514",
+}
+
+_DEFAULT_VISION_MODELS = {
+    "gemini": "gemini-2.5-flash",
+    "ollama": "qwen3-vl:8b-instruct",
+    "openai": "gpt-4o",
+    "anthropic": "claude-sonnet-4-20250514",
+}
+
+
+def _get_default_model_for_provider(provider: str, vision: bool = False) -> str:
+    """Get the default model name for a given provider."""
+    models = _DEFAULT_VISION_MODELS if vision else _DEFAULT_MODELS
+    return models.get(provider, models["gemini"])
+
+
 # Convenience functions for common configurations
 def get_default_generation_provider() -> BaseLLMProvider:
     """Get the default generation provider with auto-loaded model specs."""
     provider = os.getenv("DEFAULT_LLM_PROVIDER", "gemini").lower()
-    model = os.getenv("DEFAULT_LLM_MODEL", "gemini-2.5-flash")
+    # Use provider-specific default model if DEFAULT_LLM_MODEL is not set
+    default_model = _get_default_model_for_provider(provider)
+    model = os.getenv("DEFAULT_LLM_MODEL", default_model)
 
     # Use from_model to auto-load specs, but allow env overrides
     config = LLMConfig.from_model(
@@ -662,7 +686,9 @@ def get_default_generation_provider() -> BaseLLMProvider:
 def get_default_vision_provider() -> BaseLLMProvider:
     """Get the default vision provider with auto-loaded model specs."""
     provider = os.getenv("DEFAULT_VISION_PROVIDER", "gemini").lower()
-    model = os.getenv("DEFAULT_VISION_MODEL", "gemini-2.5-flash")
+    # Use provider-specific default model if DEFAULT_VISION_MODEL is not set
+    default_model = _get_default_model_for_provider(provider, vision=True)
+    model = os.getenv("DEFAULT_VISION_MODEL", default_model)
 
     # Use from_model to auto-load specs, with lower temperature for vision
     config = LLMConfig.from_model(
