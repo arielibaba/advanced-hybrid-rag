@@ -181,6 +181,21 @@ CogniDoc uses the **current working directory** as project root:
 
 **Important:** If `COGNIDOC_DATA_DIR` is set, it should point to the data folder directly (containing `sources/`, `pdfs/`, etc.), not the project root.
 
+### Provider Selection (`utils/llm_providers.py`)
+
+When switching providers at runtime (e.g., `DEFAULT_LLM_PROVIDER=ollama`), the code uses **provider-specific** env vars for model selection:
+
+| Provider | LLM Model Env Var | Default Model |
+|----------|-------------------|---------------|
+| gemini | `GEMINI_LLM_MODEL` | gemini-2.5-flash |
+| ollama | `OLLAMA_LLM_MODEL` | granite3.3:8b |
+| openai | `OPENAI_LLM_MODEL` | gpt-4o |
+| anthropic | `ANTHROPIC_LLM_MODEL` | claude-sonnet-4-20250514 |
+
+**Priority order:** Provider-specific env var → Built-in default for that provider
+
+This ensures `DEFAULT_LLM_PROVIDER=ollama` uses `granite3.3:8b` even if `.env` has `DEFAULT_LLM_MODEL=gemini-2.5-flash`.
+
 ### Key Constants (overridable via `.env`)
 
 - `YOLO_CONFIDENCE_THRESHOLD`: 0.2
