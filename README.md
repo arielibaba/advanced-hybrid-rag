@@ -377,6 +377,47 @@ Complex queries (score ≥ 0.55) trigger a ReAct agent with the loop: `THINK →
 
 **Agent triggers:** Analytical queries, meta-questions ("How many documents?"), comparative queries, ambiguous requests.
 
+### Tools & Processing (non-LLM)
+
+| Stage | Tool/Library | Details |
+|-------|--------------|---------|
+| Office → PDF | LibreOffice | DOCX, PPTX, XLSX, HTML conversion |
+| PDF → Images | pdf2image | 600 DPI, PNG format |
+| Layout Detection | YOLOv11x | `yolov11x_best.pt` (~109 MB, optional) |
+| Vector Storage | Qdrant | Embedded mode (no server) |
+| Sparse Index | BM25 | In-memory keyword index |
+| Graph Storage | NetworkX | With Louvain community detection |
+
+### LLM Models - Ingestion Pipeline
+
+| Stage | Default Model | Provider |
+|-------|---------------|----------|
+| Document parsing | `ibm/granite-docling:258m-bf16` | Ollama |
+| Text/table extraction | `gemini-3-pro-preview` (vision) | Gemini |
+| Image descriptions | `gemini-3-pro-preview` (vision) | Gemini |
+| Table descriptions | `gemini-3-pro-preview` | Gemini |
+| Embeddings | `qwen3-embedding:4b-q8_0` | Ollama |
+| Entity extraction | `gemini-3-pro-preview` | Gemini |
+| Entity resolution | `gemini-3-pro-preview` | Gemini |
+| Community summaries | `gemini-3-pro-preview` | Gemini |
+
+### LLM Models - Query Pipeline
+
+| Stage | Default Model | Provider |
+|-------|---------------|----------|
+| Query rewriting | `gemini-3-flash-preview` | Gemini |
+| Query expansion | `gemini-3-flash-preview` | Gemini |
+| Query classification | Rule-based (+ LLM fallback) | - |
+| Reranking | `gemini-3-flash-preview` | Gemini |
+| Generation | `gemini-3-flash-preview` | Gemini |
+
+### Optional Features (disabled by default)
+
+| Feature | Default Model | Provider |
+|---------|---------------|----------|
+| Cross-encoder reranking | `dengcao/Qwen3-Reranker-0.6B:F16` | Ollama |
+| Contextual compression | `gemini-3-flash-preview` | Gemini |
+
 ---
 
 ## CLI Reference
@@ -416,6 +457,7 @@ cognidoc ingest ./data/sources \
 | `--skip-embeddings` | Embedding generation |
 | `--skip-indexing` | Vector index building |
 | `--skip-graph` | Knowledge graph building |
+| `--skip-resolution` | Entity resolution (semantic deduplication) |
 
 ### Serve Options
 
@@ -507,7 +549,7 @@ uv run pylint src/cognidoc/
 ### Running Tests
 
 ```bash
-# All tests (226 total)
+# All tests (286 total)
 pytest tests/ -v
 
 # Single test file
@@ -536,8 +578,10 @@ pytest tests/test_00_e2e_pipeline.py -v --run-slow
 | `test_benchmark.py` | 10 | Precision/recall benchmark |
 | `test_checkpoint.py` | 32 | Checkpoint/resume system |
 | `test_complexity.py` | 25 | Query complexity evaluation |
-| `test_e2e_language_and_count.py` | 24 | Language detection |
-| `test_helpers.py` | 34 | Helpers and utilities |
+| `test_e2e_language_and_count.py` | 24 | Language detection (FR/EN/ES/DE) |
+| `test_entity_resolution.py` | 34 | Entity resolution (blocking, matching, clustering, merging) |
+| `test_helpers.py` | 34 | Token counting, chat history, query parsing |
+| `test_optimizations.py` | 26 | Pipeline optimizations (concurrency, pooling) |
 | `test_providers.py` | 32 | LLM/Embedding providers |
 
 ### Benchmark with External Data

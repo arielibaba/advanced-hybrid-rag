@@ -31,6 +31,7 @@ make lint                        # Run pylint
 make refactor                    # Format + lint
 uv run black src/cognidoc/       # Format (direct)
 uv run pylint src/cognidoc/      # Lint (direct)
+uv run mypy src/cognidoc/        # Type check (direct)
 
 # Run tests
 uv run pytest tests/ -v                                    # All tests
@@ -201,7 +202,18 @@ When switching providers at runtime (e.g., `DEFAULT_LLM_PROVIDER=ollama`), the c
 
 This ensures `DEFAULT_LLM_PROVIDER=ollama` uses `granite3.3:8b` even if `.env` has `DEFAULT_LLM_MODEL=gemini-3-flash-preview`.
 
-### Models by Pipeline Stage
+### Tools & Processing (non-LLM)
+
+| Stage | Tool/Library | Details |
+|-------|--------------|---------|
+| Office → PDF | LibreOffice | DOCX, PPTX, XLSX, HTML conversion |
+| PDF → Images | pdf2image | 600 DPI, PNG format |
+| Layout Detection | YOLOv11x | `yolov11x_best.pt` (~109 MB, optional) |
+| Vector Storage | Qdrant | Embedded mode (no server) |
+| Sparse Index | BM25 | In-memory keyword index |
+| Graph Storage | NetworkX | With Louvain community detection |
+
+### LLM Models by Pipeline Stage
 
 **Ingestion Pipeline:**
 
