@@ -393,13 +393,13 @@ Complex queries (score ≥ 0.55) trigger a ReAct agent with the loop: `THINK →
 | Stage | Default Model | Provider |
 |-------|---------------|----------|
 | Document parsing | `ibm/granite-docling:258m-bf16` | Ollama |
-| Text/table extraction | `gemini-3-pro-preview` (vision) | Gemini |
-| Image descriptions | `gemini-3-pro-preview` (vision) | Gemini |
-| Table descriptions | `gemini-3-pro-preview` | Gemini |
+| Text/table extraction | `gemini-3-flash-preview` (vision) | Gemini |
+| Image descriptions | `gemini-3-flash-preview` (vision) | Gemini |
+| Table descriptions | `gemini-3-flash-preview` | Gemini |
 | Embeddings | `qwen3-embedding:4b-q8_0` | Ollama |
-| Entity extraction | `gemini-3-pro-preview` | Gemini |
-| Entity resolution | `gemini-3-pro-preview` | Gemini |
-| Community summaries | `gemini-3-pro-preview` | Gemini |
+| Entity extraction | `gemini-3-flash-preview` | Gemini |
+| Entity resolution | `gemini-3-flash-preview` | Gemini |
+| Community summaries | `gemini-3-flash-preview` | Gemini |
 
 ### LLM Models - Query Pipeline
 
