@@ -320,6 +320,9 @@ class KnowledgeGraph:
         # Checkpoint parameters
         processed_community_ids: Optional[Set[int]] = None,
         max_consecutive_quota_errors: int = None,
+        # Periodic save parameters
+        save_interval: int = 100,
+        save_path: str = None,
     ) -> Tuple[int, int, int, bool]:
         """
         Generate summaries and embeddings for each community using LLM.
@@ -330,12 +333,17 @@ class KnowledgeGraph:
         Supports checkpoint/resume: skips already-processed communities and stops
         gracefully when quota errors are detected.
 
+        IMPORTANT: Periodically saves the graph to disk to prevent data loss
+        in case of unexpected interruption.
+
         Args:
             compute_embeddings: Whether to pre-compute embeddings for fast retrieval
             skip_existing: If True, skip communities that already have a valid summary
                           (not the default "Community of X related entities" placeholder)
             processed_community_ids: Set of community IDs already processed (for resume)
             max_consecutive_quota_errors: Stop after this many consecutive quota errors
+            save_interval: Save graph to disk every N communities (default: 100)
+            save_path: Path to save graph (defaults to GRAPH_DIR)
 
         Returns:
             Tuple of (generated, skipped, quota_errors, interrupted)
@@ -357,6 +365,7 @@ class KnowledgeGraph:
         consecutive_quota_errors = 0
         interrupted = False
         communities_to_embed = []  # Collect for batch embedding
+        last_save_count = 0  # Track when we last saved
 
         for community_id, community in self.communities.items():
             if not community.node_ids:
@@ -419,6 +428,12 @@ SUMMARY:"""
                 # Collect for batch embedding
                 if compute_embeddings and community.summary:
                     communities_to_embed.append((community_id, community.summary))
+
+                # Periodic save to prevent data loss
+                if save_interval > 0 and (generated - last_save_count) >= save_interval:
+                    logger.info(f"Periodic save: {generated} community summaries generated...")
+                    self.save(save_path)
+                    last_save_count = generated
 
             except Exception as e:
                 error_type, error_msg = get_error_info(e)

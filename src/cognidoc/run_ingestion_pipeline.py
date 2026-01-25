@@ -917,6 +917,8 @@ async def run_ingestion_pipeline_async(
                     skip_existing=True,
                     processed_community_ids=processed_community_ids,
                     max_consecutive_quota_errors=max_consecutive_quota_errors,
+                    # Periodic save to prevent data loss (saves every 100 communities)
+                    save_interval=100,
                 )
 
                 # Update checkpoint
