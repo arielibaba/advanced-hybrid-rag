@@ -31,13 +31,12 @@ UV_LINK_MODE=copy uv pip install -e ".[all,dev]"
 
 # Code quality (black: line-length=100, target py310-py312)
 # pylint disables: C0114, C0115, C0116 (missing docstrings), R0903 (too-few-public-methods)
-make format                      # Format with black
-make lint                        # Run pylint
-make refactor                    # Format + lint
+# NOTE: make format/lint only target root-level *.py files, NOT src/cognidoc/
+# Use direct commands below for the main source code:
+uv run black src/cognidoc/       # Format source code
+uv run pylint src/cognidoc/      # Lint source code
+uv run mypy src/cognidoc/        # Type check (ignore_missing_imports=true)
 make container-lint              # Lint Dockerfile with hadolint
-uv run black src/cognidoc/       # Format (direct)
-uv run pylint src/cognidoc/      # Lint (direct)
-uv run mypy src/cognidoc/        # Type check (direct, ignore_missing_imports=true)
 
 # Run tests
 uv run pytest tests/ -v                                    # All tests
@@ -82,7 +81,9 @@ Resume from specific stage:
 Source code is in `src/cognidoc/` but installs as `cognidoc` package:
 - File path: `src/cognidoc/cognidoc_app.py`
 - Module import: `from cognidoc import CogniDoc`
-- CLI execution: `python -m cognidoc.cognidoc_app`
+- CLI entry point: `cognidoc` (defined in `pyproject.toml` → `cognidoc.cli:main`)
+- Direct execution: `python -m cognidoc.cognidoc_app`
+- Version: `__version__` in `src/cognidoc/__init__.py` and `version` in `pyproject.toml` (keep in sync)
 
 ### Key Modules
 
@@ -193,6 +194,9 @@ CogniDoc uses the **current working directory** as project root:
 |----------|---------|--------------|
 | `PROJECT_DIR` | `cwd()` | `COGNIDOC_PROJECT_DIR` |
 | `DATA_DIR` | `PROJECT_DIR/data` | `COGNIDOC_DATA_DIR` |
+| `PACKAGE_DIR` | `Path(__file__).parent` | — (auto-resolved to installed package location) |
+
+`PACKAGE_DIR` is used to locate embedded resources like prompt templates in `src/cognidoc/prompts/`.
 
 **Important:** If `COGNIDOC_DATA_DIR` is set, it should point to the data folder directly (containing `sources/`, `pdfs/`, etc.), not the project root.
 
