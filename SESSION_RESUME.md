@@ -1763,3 +1763,59 @@ GraphRAG:   22,315 entités, 13,929 communautés
 - **cognidoc-theologie-morale:** 4 commits locaux (projet de test, non poussé)
 - **Tests:** 273/286 passés (13 skipped = tests E2E lents)
 - **Documentation:** CLAUDE.md et README.md synchronisés avec le code
+
+---
+
+## Session 16 - 28 janvier 2026
+
+### Contexte: Fix liens sources PDF + sécurisation environnement
+
+Session axée sur la correction d'un bug critique (liens sources 404 dans le chatbot), l'amélioration de la documentation, et la sécurisation de l'environnement de développement.
+
+### 1. Amélioration CLAUDE.md
+
+Ajout de sections manquantes pour guider les futures sessions :
+- Configuration des modèles de vision (séparée des LLM)
+- Variables d'entity resolution et checkpoint
+- Groupes de dépendances optionnels (`wizard`, etc.)
+- Targets Makefile manquants (`make lock`, `make help`, `make container-lint`)
+- Config outils qualité (black line-length=100, pylint disabled rules)
+
+### 2. Fix liens sources PDF — `{"detail":"Not Found"}`
+
+**Symptôme:** Cliquer sur une source dans le chat ouvrait une page avec `{"detail":"Not Found"}`.
+
+**Diagnostic:**
+1. Premier essai : réordonner le mount StaticFiles avant Gradio → insuffisant
+2. Découverte : `cognidoc serve` (CLI) passe par `api.py:launch_ui` qui appelait `demo.launch()` directement, sans jamais créer le wrapper FastAPI avec l'endpoint `/pdfs/`
+3. Le code de serving PDF dans `main()` de `cognidoc_app.py` n'était exécuté que via `python -m cognidoc.cognidoc_app`
+
+**Fix:**
+- Extraction de `create_fastapi_app()` dans `cognidoc_app.py` : crée un FastAPI app avec endpoint explicite `@app.get("/pdfs/{file_path:path}")` avant de monter Gradio
+- Gestion Unicode NFC/NFD (compatibilité macOS) et protection path traversal
+- `api.py:launch_ui` utilise maintenant `create_fastapi_app()` + `uvicorn.run()` au lieu de `demo.launch()`
+
+**Fichiers modifiés:**
+- `src/cognidoc/cognidoc_app.py` — `create_fastapi_app()`, refactor de `main()`
+- `src/cognidoc/api.py` — `launch_ui()` utilise le wrapper FastAPI
+
+### 3. Sécurisation environnement
+
+- **Clés API retirées du `.zshrc`** : OpenAI, Cohere, LlamaCloud, Hugging Face, Google (5 clés)
+- **Clés sauvegardées** dans `~/Documents/Clés_API/api_keys.env` comme référence
+- **`PIP_REQUIRE_VIRTUALENV=true`** ajouté au `.zshrc` — empêche `pip install` hors d'un venv activé
+- **`autoload -Uz compinit && compinit`** ajouté pour corriger le warning `compdef` de uv
+
+### Commits session 16
+
+| Hash | Description |
+|------|-------------|
+| `bdadd10` | Enhance CLAUDE.md with vision config, entity resolution, and tooling details |
+| `62166db` | Fix PDF source links returning 404 by mounting static files before Gradio |
+| `55e239c` | Fix PDF source links for cognidoc serve (CLI path) |
+
+### État final
+
+- **cognidoc (librairie):** 3 commits poussés sur origin/master
+- **Liens sources PDF:** fonctionnels via `cognidoc serve` et `python -m cognidoc.cognidoc_app`
+- **Environnement:** `.zshrc` nettoyé, pip protégé hors venv
