@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CogniDoc is a Hybrid RAG (Vector + GraphRAG) document assistant that converts multi-format documents into a searchable knowledge base with intelligent query routing.
+CogniDoc is a Hybrid RAG (Vector + GraphRAG) document assistant that converts multi-format documents into a searchable knowledge base with intelligent query routing. Requires Python 3.10+. Built with Hatchling. Licensed under MIT.
 
 **Key Design Decisions:**
 - No LangChain/LlamaIndex - direct Qdrant and Ollama integration for fine-grained control
@@ -16,22 +16,28 @@ CogniDoc is a Hybrid RAG (Vector + GraphRAG) document assistant that converts mu
 ## Commands
 
 ```bash
-# Setup (uses uv package manager)
+# Setup (uses uv package manager, Hatchling build backend)
 make install          # Create venv and install dependencies
 make sync             # Sync environment with lock file
+make lock             # Lock dependencies
+make help             # Display all available Makefile targets
 uv sync --group dev   # Install dev dependencies (pytest, black, pylint, mypy)
+
+# Optional dependency groups: ui, yolo, ollama, gemini, openai, anthropic, cloud, conversion, wizard, all, dev
 
 # IMPORTANT: If project path contains spaces
 UV_LINK_MODE=copy uv sync --all-extras
 UV_LINK_MODE=copy uv pip install -e ".[all,dev]"
 
-# Code quality
+# Code quality (black: line-length=100, target py310-py312)
+# pylint disables: C0114, C0115, C0116 (missing docstrings), R0903 (too-few-public-methods)
 make format                      # Format with black
 make lint                        # Run pylint
 make refactor                    # Format + lint
+make container-lint              # Lint Dockerfile with hadolint
 uv run black src/cognidoc/       # Format (direct)
 uv run pylint src/cognidoc/      # Lint (direct)
-uv run mypy src/cognidoc/        # Type check (direct)
+uv run mypy src/cognidoc/        # Type check (direct, ignore_missing_imports=true)
 
 # Run tests
 uv run pytest tests/ -v                                    # All tests
@@ -205,6 +211,22 @@ When switching providers at runtime (e.g., `DEFAULT_LLM_PROVIDER=ollama`), the c
 
 This ensures `DEFAULT_LLM_PROVIDER=ollama` uses `granite3.3:8b` even if `.env` has `DEFAULT_LLM_MODEL=gemini-3-flash-preview`.
 
+### Vision Model Configuration
+
+Vision models are configured **separately** from LLM models (used for image/table extraction during ingestion):
+
+| Env Var | Default |
+|---------|---------|
+| `DEFAULT_VISION_PROVIDER` | gemini |
+| `DEFAULT_VISION_MODEL` | gemini-3-flash-preview |
+| `VISION_TEMPERATURE` | 0.2 |
+| `VISION_TOP_P` | 0.85 |
+| `OLLAMA_VISION_MODEL` | qwen3-vl:8b-instruct |
+| `OPENAI_VISION_MODEL` | gpt-4o |
+| `ANTHROPIC_VISION_MODEL` | claude-sonnet-4-20250514 |
+
+The ingestion pipeline can also use a separate LLM model via `INGESTION_LLM_MODEL` (for entity extraction, community summaries, table descriptions).
+
 ### Tools & Processing (non-LLM)
 
 | Stage | Tool/Library | Details |
@@ -253,11 +275,29 @@ This ensures `DEFAULT_LLM_PROVIDER=ollama` uses `granite3.3:8b` even if `.env` h
 - `YOLO_CONFIDENCE_THRESHOLD`: 0.2
 - `MAX_CHUNK_SIZE`: 512 tokens
 - `SEMANTIC_CHUNK_BUFFER`: 5 sentences
+- `CHUNK_OVERLAP_PERCENTAGE`: 0.1
 - `TOP_K_RETRIEVED_CHILDREN`: 10
 - `TOP_K_RERANKED_PARENTS`: 5
+- `TOP_K_REFS`: 5
 - `HYBRID_DENSE_WEIGHT`: 0.6
+- `BM25_K1`: 1.5, `BM25_B`: 0.75
 - `OLLAMA_EMBED_MODEL`: qwen3-embedding:4b-q8_0
 - `ENABLE_CONTEXTUAL_COMPRESSION`: false
+- `CONTEXT_WINDOW`: 128000, `MEMORY_WINDOW`: 64000
+
+### Entity Resolution Configuration
+
+- `ENABLE_ENTITY_RESOLUTION`: true
+- `ENTITY_RESOLUTION_SIMILARITY_THRESHOLD`: 0.75
+- `ENTITY_RESOLUTION_LLM_CONFIDENCE`: 0.7
+- `ENTITY_RESOLUTION_MAX_CONCURRENT`: 4
+- `ENTITY_RESOLUTION_USE_LLM_DESCRIPTIONS`: true
+- `ENTITY_RESOLUTION_CACHE_ENABLED`: true, `ENTITY_RESOLUTION_CACHE_TTL_HOURS`: 24
+
+### Checkpoint Configuration
+
+- `MAX_CONSECUTIVE_QUOTA_ERRORS`: 5 (auto-pause on API quota hits)
+- `CHECKPOINT_SAVE_INTERVAL`: 10
 
 ### MODEL_SPECS (`constants.py`)
 
@@ -268,7 +308,7 @@ config = LLMConfig.from_model("gemini-3-flash-preview")  # Loads all specs autom
 
 ### Dynamic MEMORY_WINDOW (`helpers.py`)
 
-Conversation memory adapts to 50% of the model's context window:
+Conversation memory adapts to 50% of the model's context window (unless `MEMORY_WINDOW` env var is set explicitly):
 ```python
 def get_memory_window() -> int:
     return int(client.config.context_window * 0.5)
@@ -297,7 +337,7 @@ YOLO detection requires `models/YOLOv11/yolov11x_best.pt` (~109 MB, gitignored).
 | Directory | Content |
 |-----------|---------|
 | `models/YOLOv11/` | YOLO model file (optional) |
-| `config/` | GraphRAG schema (`graph_schema.yaml`) |
+| `config/` | GraphRAG schemas (`graph_schema.yaml`, `graph_schema_generic.yaml`, `graph_schema_bioethics.yaml`) |
 | `data/sources/` | Input documents (any format) |
 | `data/pdfs/` | Converted PDFs |
 | `data/images/` | 600 DPI page images |
