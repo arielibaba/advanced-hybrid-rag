@@ -378,7 +378,7 @@ YOLO detection requires `models/YOLOv11/yolov11x_best.pt` (~109 MB, gitignored).
 | Directory | Content |
 |-----------|---------|
 | `models/YOLOv11/` | YOLO model file (optional) |
-| `config/` | GraphRAG schemas (`graph_schema.yaml`, `graph_schema_generic.yaml`, `graph_schema_bioethics.yaml`) |
+| `config/` | GraphRAG schema (`graph_schema.yaml`) |
 | `data/sources/` | Input documents (any format) |
 | `data/pdfs/` | Converted PDFs |
 | `data/images/` | 600 DPI page images |
