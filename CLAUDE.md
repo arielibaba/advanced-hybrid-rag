@@ -13,6 +13,7 @@ CogniDoc is a Hybrid RAG (Vector + GraphRAG) document assistant that converts mu
 - Custom semantic chunking with breakpoint detection
 - Custom ReAct agent (~300 lines in `agent.py`) instead of LangGraph for fine-grained control
 - Incremental ingestion via manifest tracking (only new/modified documents are reprocessed)
+- Auto-generated graph schema from corpus analysis (two-stage LLM pipeline)
 
 ## Commands
 
@@ -47,7 +48,9 @@ uv run pytest tests/ -v -k "complexity"                    # Pattern match
 uv run pytest tests/test_00_e2e_pipeline.py -v --run-slow  # Full E2E (~2-5 min)
 
 # CLI commands
+cognidoc schema-generate ./data/sources --language fr  # Auto-generate graph schema
 cognidoc ingest ./data/sources --llm gemini --embedding ollama
+cognidoc ingest ./data/sources --regenerate-schema     # Force schema regeneration
 cognidoc query "What is X?"
 cognidoc serve --port 7860 --share
 cognidoc info
@@ -75,6 +78,7 @@ Resume from specific stage:
 --force-reembed       # Re-embed all (ignore cache)
 --full-reindex        # Force full re-ingestion (ignore incremental manifest)
 --no-incremental      # Disable incremental detection
+--regenerate-schema   # Force graph schema regeneration before ingestion
 ```
 
 ## Architecture
@@ -103,11 +107,11 @@ Source code is in `src/cognidoc/` but installs as `cognidoc` package:
 | `agent.py` | ReAct agent with parallel reflection for complex queries |
 | `agent_tools.py` | Tool implementations for agent (9 tools) |
 | `helpers.py` | Query rewriting, parsing, conversation context |
-| `schema_wizard.py` | Interactive/auto schema generation for GraphRAG |
+| `schema_wizard.py` | Schema generation: interactive, template-based, or corpus-based (two-stage LLM) |
 | `constants.py` | Central config (paths, thresholds, model names) |
 | `checkpoint.py` | Resumable pipeline execution with atomic saves |
 | `ingestion_manifest.py` | Incremental ingestion tracking (new/modified file detection via SHA-256) |
-| `cli.py` | Command-line interface (ingest, query, serve, info) |
+| `cli.py` | Command-line interface (ingest, query, serve, init, info, schema-generate) |
 | `graph_config.py` | GraphRAG schema loading and validation |
 | `utils/llm_client.py` | Singleton LLM client (Gemini default) |
 | `utils/llm_providers.py` | Multi-provider abstraction layer |
@@ -166,6 +170,41 @@ The pipeline is **incremental by default**. An ingestion manifest (`data/indexes
 - Manifest saved only after successful pipeline completion (crash = re-run processes same files)
 - Modified files: `_cleanup_intermediate_files(stem)` deletes old processed/chunks/embeddings before reprocessing
 - Deleted files: not handled automatically (use `--full-reindex`). Future enhancement: `--prune` flag.
+
+### Schema Auto-Generation
+
+The graph schema (`config/graph_schema.yaml`) can be auto-generated from corpus analysis via `cognidoc schema-generate` or automatically at first `cognidoc ingest` when no schema exists.
+
+**Pipeline:**
+```
+data/sources/ → PDF conversion → Sample ≤100 PDFs (distributed across subfolders)
+                                        ↓
+                            Extract text from first 3 pages (PyMuPDF)
+                                        ↓
+                    Stage A: Batch analysis (10-15 docs/batch, parallel LLM calls)
+                              → themes, entity types, relationship types per batch
+                                        ↓
+                    Stage B: Synthesis (single LLM call)
+                              → deduplicated, unified YAML schema
+                                        ↓
+                                config/graph_schema.yaml
+```
+
+**Sampling strategy:**
+- If `data/sources/` has subfolders: distribute `max_docs` equally across subfolders
+- If flat structure: random sample up to `max_docs`
+- Non-generic folder/file names are used as metadata signals for the LLM
+
+**Design notes (hyperparameters):**
+- `max_docs=100`: Pragmatic default. Topic modeling research shows 10-20% of a corpus suffices to identify main themes, with diminishing returns beyond that. 100 docs covers most use cases; configurable via `--max-docs`.
+- `max_pages=3`: First 3 pages capture table of contents, abstract, or introduction for most document types (reports, books, articles). Configurable via `--max-pages`. For short documents (<3 pages), all available pages are extracted automatically (`min(max_pages, actual_pages)`).
+- `batch_size=12`: Balances LLM context usage (~36K tokens/batch at ~3K chars/doc) with extraction quality. With 100 docs, this produces ~8 batches = ~8 LLM calls for Stage A.
+- Generic name detection filters out uninformative file/folder names (e.g., `doc_1`, `scan`, `untitled`, purely numeric).
+
+**Fallback chain:**
+1. Corpus-based two-stage pipeline (primary)
+2. Legacy single-shot `generate_schema_from_documents()` (if <2 valid batches)
+3. Template-based `generate_schema_from_answers("generic")` (if no text extracted)
 
 ### Query Processing
 
@@ -273,6 +312,7 @@ The ingestion pipeline can also use a separate LLM model via `INGESTION_LLM_MODE
 | Stage | Tool/Library | Details |
 |-------|--------------|---------|
 | Office → PDF | LibreOffice | DOCX, PPTX, XLSX, HTML conversion |
+| PDF text extraction | PyMuPDF | Schema generation (first N pages) |
 | PDF → Images | pdf2image | 600 DPI, PNG format |
 | Layout Detection | YOLOv11x | `yolov11x_best.pt` (~109 MB, optional) |
 | Vector Storage | Qdrant | Embedded mode (no server) |
@@ -285,6 +325,7 @@ The ingestion pipeline can also use a separate LLM model via `INGESTION_LLM_MODE
 
 | Stage | Default Model | Provider |
 |-------|---------------|----------|
+| Schema generation (batch + synthesis) | `gemini-3-flash-preview` | Gemini |
 | Document parsing | `ibm/granite-docling:258m-bf16` | Ollama |
 | Text/table extraction | `gemini-3-flash-preview` (vision) | Gemini |
 | Image descriptions | `gemini-3-flash-preview` (vision) | Gemini |

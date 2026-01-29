@@ -429,6 +429,7 @@ Complex queries (score ≥ 0.55) trigger a ReAct agent with the loop: `THINK →
 | `cognidoc ingest <path>` | Ingest documents into the knowledge base |
 | `cognidoc query "<question>"` | Query the knowledge base |
 | `cognidoc serve` | Launch the web interface |
+| `cognidoc schema-generate [path]` | Auto-generate graph schema from corpus analysis |
 | `cognidoc info` | Show current configuration |
 | `cognidoc init` | Copy template files (schema, prompts) |
 
@@ -458,6 +459,20 @@ cognidoc ingest ./data/sources \
 | `--skip-indexing` | Vector index building |
 | `--skip-graph` | Knowledge graph building |
 | `--skip-resolution` | Entity resolution (semantic deduplication) |
+| `--full-reindex` | Force full re-ingestion (ignore incremental manifest) |
+| `--regenerate-schema` | Force graph schema regeneration before ingestion |
+
+### Schema Generation
+
+```bash
+cognidoc schema-generate ./data/sources \
+    --language fr \             # Schema language (default: en)
+    --max-docs 100 \            # Max documents to sample (default: 100)
+    --max-pages 3 \             # Max pages per document (default: 3)
+    --regenerate                # Overwrite existing schema
+```
+
+Auto-generates `config/graph_schema.yaml` by analyzing the corpus: converts sources to PDF, samples up to 100 documents (distributed across subfolders), extracts text from first 3 pages, then runs a two-stage LLM pipeline (batch analysis → synthesis). Also auto-triggered during `cognidoc ingest` if no schema exists.
 
 ### Serve Options
 

@@ -1,12 +1,17 @@
 """
 Schema Wizard - Interactive and automatic graph schema generation.
 
-Provides two modes:
+Provides three modes:
 1. Interactive: Ask user questions about their domain
-2. Automatic: Analyze document samples to generate schema
+2. Automatic (legacy): Analyze text-readable document samples to generate schema
+3. Corpus-based: Convert to PDF, sample intelligently, two-stage LLM pipeline
 """
 
+import asyncio
+import json
+import math
 import os
+import re
 import random
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
@@ -14,7 +19,7 @@ import yaml
 
 from .utils.logger import logger
 from .utils.llm_client import llm_chat
-from .constants import SOURCES_DIR
+from .constants import SOURCES_DIR, PDF_DIR
 
 # Check if questionary is available
 _QUESTIONARY_AVAILABLE = False
@@ -90,6 +95,701 @@ LANGUAGE_OPTIONS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Generic name detection
+# ---------------------------------------------------------------------------
+
+GENERIC_NAME_PATTERNS = [
+    r"^doc(ument)?s?$",
+    r"^files?$",
+    r"^fichiers?$",
+    r"^scans?$",
+    r"^untitled",
+    r"^sans[_ ]titre",
+    r"^copie",
+    r"^copy",
+    r"^new$",
+    r"^nouveau",
+    r"^temp$",
+    r"^draft$",
+    r"^brouillon$",
+    r"^dossier",
+    r"^folder",
+    r"^\d+$",
+    r"^.{1,2}$",
+    r"^(doc|file|scan|img|page|image|photo)[_\-]?\d+$",
+    r"^IMG_\d+$",
+]
+
+_GENERIC_RE = [re.compile(p, re.IGNORECASE) for p in GENERIC_NAME_PATTERNS]
+
+
+def is_generic_name(name: str) -> bool:
+    """Check if a filename or folder name is generic (non-informative)."""
+    stem = Path(name).stem.strip()
+    return any(pat.match(stem) for pat in _GENERIC_RE)
+
+
+# ---------------------------------------------------------------------------
+# PDF text extraction (PyMuPDF)
+# ---------------------------------------------------------------------------
+
+def extract_pdf_text(pdf_path: Path, max_pages: int = 3, max_chars: int = 3000) -> str:
+    """
+    Extract text from the first N pages of a PDF using PyMuPDF.
+
+    If the PDF has fewer than max_pages, all available pages are extracted.
+
+    Args:
+        pdf_path: Path to the PDF file
+        max_pages: Maximum pages to extract (default 3)
+        max_chars: Maximum characters to return (default 3000)
+
+    Returns:
+        Extracted text, or empty string on failure
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.warning("PyMuPDF (pymupdf) not installed. Cannot extract PDF text.")
+        return ""
+
+    try:
+        doc = fitz.open(str(pdf_path))
+        text_parts = []
+        pages_to_read = min(max_pages, len(doc))
+        for page_num in range(pages_to_read):
+            page = doc[page_num]
+            text_parts.append(page.get_text())
+        doc.close()
+        combined = "\n".join(text_parts)
+        return combined[:max_chars]
+    except Exception as e:
+        logger.warning(f"Could not extract text from {pdf_path.name}: {e}")
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Intelligent PDF sampling for schema generation
+# ---------------------------------------------------------------------------
+
+def sample_pdfs_for_schema(
+    sources_dir: Path,
+    pdf_dir: Path,
+    max_docs: int = 100,
+    max_pages: int = 3,
+) -> Tuple[List[Dict[str, str]], List[str], List[str]]:
+    """
+    Sample PDFs intelligently for schema generation.
+
+    Scans sources_dir for structure (subfolders vs flat), then reads text from
+    the first pages of sampled PDFs in pdf_dir.
+
+    Args:
+        sources_dir: Path to source documents directory
+        pdf_dir: Path to converted PDFs directory
+        max_docs: Maximum documents to sample (default 100)
+        max_pages: Maximum pages per document to extract (default 3)
+
+    Returns:
+        Tuple of:
+        - List of {filename, content, subfolder} dicts
+        - List of non-generic subfolder names
+        - List of non-generic file names (from sample)
+    """
+    sources_path = Path(sources_dir)
+    pdf_path = Path(pdf_dir)
+
+    if not sources_path.exists():
+        logger.warning(f"Sources directory not found: {sources_path}")
+        return [], [], []
+
+    if not pdf_path.exists():
+        logger.warning(f"PDF directory not found: {pdf_path}")
+        return [], [], []
+
+    # Discover subfolders in sources
+    subfolders = set()
+    source_files_by_folder: Dict[str, List[Path]] = {}
+
+    for item in sources_path.rglob("*"):
+        if not item.is_file():
+            continue
+        rel = item.relative_to(sources_path)
+        if len(rel.parts) > 1:
+            folder = rel.parts[0]
+            subfolders.add(folder)
+            source_files_by_folder.setdefault(folder, []).append(item)
+        else:
+            source_files_by_folder.setdefault("", []).append(item)
+
+    # Build index of available PDFs by stem
+    available_pdfs = {}
+    for pdf_file in pdf_path.glob("*.pdf"):
+        available_pdfs[pdf_file.stem.lower()] = pdf_file
+
+    # Determine which source files to sample
+    sampled_sources: List[Tuple[Path, str]] = []  # (source_path, subfolder)
+
+    if subfolders:
+        # Distribute equally across subfolders
+        folders_with_files = [f for f in subfolders if source_files_by_folder.get(f)]
+        if folders_with_files:
+            per_folder = max(1, math.ceil(max_docs / len(folders_with_files)))
+            for folder in folders_with_files:
+                folder_files = source_files_by_folder[folder]
+                n = min(per_folder, len(folder_files))
+                chosen = random.sample(folder_files, n)
+                sampled_sources.extend((f, folder) for f in chosen)
+
+        # Also include root-level files if any
+        root_files = source_files_by_folder.get("", [])
+        if root_files:
+            remaining = max(0, max_docs - len(sampled_sources))
+            if remaining > 0:
+                n = min(remaining, len(root_files))
+                chosen = random.sample(root_files, n)
+                sampled_sources.extend((f, "") for f in chosen)
+
+        # Trim to max_docs
+        if len(sampled_sources) > max_docs:
+            sampled_sources = random.sample(sampled_sources, max_docs)
+    else:
+        # Flat structure: sample randomly
+        all_files = source_files_by_folder.get("", [])
+        n = min(max_docs, len(all_files))
+        if all_files:
+            chosen = random.sample(all_files, n)
+            sampled_sources = [(f, "") for f in chosen]
+
+    # Extract text from corresponding PDFs
+    samples = []
+    informative_file_names = []
+    informative_folder_names = []
+
+    seen_folders = set()
+    for source_file, subfolder in sampled_sources:
+        stem = source_file.stem.lower()
+        pdf_file = available_pdfs.get(stem)
+
+        if pdf_file is None:
+            # Try case-insensitive match with original stem
+            pdf_file = available_pdfs.get(source_file.stem)
+            if pdf_file is None:
+                continue
+
+        content = extract_pdf_text(pdf_file, max_pages=max_pages)
+        if not content.strip():
+            continue
+
+        samples.append({
+            "filename": source_file.name,
+            "content": content,
+            "subfolder": subfolder,
+        })
+
+        # Collect non-generic names
+        if not is_generic_name(source_file.name):
+            informative_file_names.append(source_file.stem)
+
+        if subfolder and subfolder not in seen_folders:
+            seen_folders.add(subfolder)
+            if not is_generic_name(subfolder):
+                informative_folder_names.append(subfolder)
+
+    logger.info(
+        f"Sampled {len(samples)} PDFs for schema generation"
+        f" ({len(informative_folder_names)} informative folders,"
+        f" {len(informative_file_names)} informative file names)"
+    )
+
+    return samples, informative_folder_names, informative_file_names
+
+
+# ---------------------------------------------------------------------------
+# Two-stage LLM pipeline for schema generation
+# ---------------------------------------------------------------------------
+
+async def _llm_chat_async(messages: List[Dict[str, str]], **kwargs) -> str:
+    """Run llm_chat in a thread pool for async usage."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, lambda: llm_chat(messages, **kwargs)
+    )
+
+
+def _parse_json_response(response: str) -> Optional[Dict[str, Any]]:
+    """Extract and parse JSON from an LLM response."""
+    text = response.strip()
+
+    # Try extracting from code blocks
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Try json_repair if available
+    try:
+        from json_repair import repair_json
+        repaired = repair_json(text, return_objects=True)
+        if isinstance(repaired, dict):
+            return repaired
+    except Exception:
+        pass
+
+    return None
+
+
+def _parse_yaml_response(response: str) -> Optional[Dict[str, Any]]:
+    """Extract and parse YAML from an LLM response."""
+    text = response.strip()
+    if "```yaml" in text:
+        text = text.split("```yaml")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError:
+        return None
+
+
+async def analyze_document_batch(
+    batch: List[Dict[str, str]],
+    batch_index: int,
+    language: str = "en",
+) -> Optional[Dict[str, Any]]:
+    """
+    Stage A: Analyze a batch of documents to identify themes, entities, relationships.
+
+    Args:
+        batch: List of {filename, content, subfolder} dicts
+        batch_index: Batch number for logging
+        language: Target language for descriptions
+
+    Returns:
+        Dict with themes, entity_types, relationship_types, domain_hint — or None on failure
+    """
+    # Build excerpts
+    excerpts_parts = []
+    file_names = []
+    for doc in batch:
+        header = f"--- {doc['filename']}"
+        if doc.get("subfolder"):
+            header += f" (folder: {doc['subfolder']})"
+        header += " ---"
+        excerpts_parts.append(f"{header}\n{doc['content']}")
+        file_names.append(doc["filename"])
+
+    excerpts = "\n\n".join(excerpts_parts)
+
+    prompt = f"""Analyze these document excerpts and identify the main themes, entity types, and relationship types.
+
+METADATA:
+- File names: {', '.join(file_names)}
+- Language for output: {language}
+
+DOCUMENT EXCERPTS:
+{excerpts}
+
+Respond ONLY with valid JSON (no markdown, no explanation):
+{{
+  "themes": ["theme1", "theme2", "theme3"],
+  "entity_types": [
+    {{"name": "EntityTypeName", "description": "What this entity represents", "examples": ["ex1", "ex2"]}}
+  ],
+  "relationship_types": [
+    {{"name": "RELATIONSHIP_NAME", "description": "What this relationship means", "source_type": "EntityType1", "target_type": "EntityType2"}}
+  ],
+  "domain_hint": "Brief description of what these documents are about"
+}}
+
+Rules:
+- Entity type names in PascalCase
+- Relationship names in UPPER_SNAKE_CASE
+- 3-8 entity types, 3-6 relationship types
+- Be specific to the content, not generic"""
+
+    try:
+        response = await _llm_chat_async(
+            [{"role": "user", "content": prompt}],
+            temperature=0.2,
+        )
+        result = _parse_json_response(response)
+        if result and "entity_types" in result:
+            logger.debug(f"Batch {batch_index}: found {len(result.get('entity_types', []))} entity types")
+            return result
+        else:
+            logger.warning(f"Batch {batch_index}: invalid JSON response from LLM")
+            return None
+    except Exception as e:
+        logger.warning(f"Batch {batch_index} analysis failed: {e}")
+        return None
+
+
+async def run_batch_analysis(
+    samples: List[Dict[str, str]],
+    language: str = "en",
+    batch_size: int = 12,
+    max_concurrent: int = 4,
+) -> List[Dict[str, Any]]:
+    """
+    Run Stage A: parallel batch analysis of document samples.
+
+    Args:
+        samples: All document samples
+        language: Target language
+        batch_size: Documents per batch (default 12)
+        max_concurrent: Max parallel LLM calls (default 4)
+
+    Returns:
+        List of valid batch results
+    """
+    # Split into batches
+    batches = []
+    for i in range(0, len(samples), batch_size):
+        batches.append(samples[i:i + batch_size])
+
+    logger.info(f"Schema analysis: {len(samples)} documents in {len(batches)} batches")
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def _process_batch(batch, idx):
+        async with semaphore:
+            return await analyze_document_batch(batch, idx, language)
+
+    tasks = [_process_batch(batch, i) for i, batch in enumerate(batches)]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Filter valid results
+    valid_results = []
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            logger.warning(f"Batch {i} raised exception: {r}")
+        elif r is not None:
+            valid_results.append(r)
+
+    logger.info(f"Schema analysis: {len(valid_results)}/{len(batches)} batches succeeded")
+    return valid_results
+
+
+def synthesize_schema(
+    batch_results: List[Dict[str, Any]],
+    folder_names: List[str],
+    file_names: List[str],
+    language: str = "en",
+) -> Dict[str, Any]:
+    """
+    Stage B: Synthesize a final YAML schema from batch analysis results.
+
+    Aggregates all batch results + metadata signals into a single LLM call
+    that produces the final schema.
+
+    Args:
+        batch_results: Results from Stage A batches
+        folder_names: Non-generic subfolder names
+        file_names: Non-generic file names (sample)
+        language: Target language
+
+    Returns:
+        Complete schema dict ready for save_schema()
+    """
+    # Aggregate batch results
+    all_themes = []
+    all_entity_types = []
+    all_relationship_types = []
+    all_domain_hints = []
+
+    for result in batch_results:
+        all_themes.extend(result.get("themes", []))
+        all_entity_types.extend(result.get("entity_types", []))
+        all_relationship_types.extend(result.get("relationship_types", []))
+        hint = result.get("domain_hint", "")
+        if hint:
+            all_domain_hints.append(hint)
+
+    # Format aggregated data for synthesis
+    themes_str = ", ".join(set(all_themes)) if all_themes else "not identified"
+
+    entities_str = ""
+    for et in all_entity_types:
+        name = et.get("name", "Unknown")
+        desc = et.get("description", "")
+        examples = et.get("examples", [])
+        entities_str += f"- {name}: {desc}"
+        if examples:
+            entities_str += f" (examples: {', '.join(examples[:3])})"
+        entities_str += "\n"
+
+    rels_str = ""
+    for rt in all_relationship_types:
+        name = rt.get("name", "UNKNOWN")
+        desc = rt.get("description", "")
+        src = rt.get("source_type", "?")
+        tgt = rt.get("target_type", "?")
+        rels_str += f"- {name}: {desc} ({src} -> {tgt})\n"
+
+    domain_hints_str = "; ".join(all_domain_hints[:5]) if all_domain_hints else "mixed documents"
+
+    metadata_parts = []
+    if folder_names:
+        metadata_parts.append(f"Subfolder names: {', '.join(folder_names[:20])}")
+    if file_names:
+        metadata_parts.append(f"Sample file names: {', '.join(file_names[:20])}")
+    metadata_str = "\n".join(metadata_parts) if metadata_parts else "No additional metadata"
+
+    prompt = f"""You are creating a knowledge graph schema for a document corpus.
+
+ANALYSIS RESULTS FROM {len(batch_results)} DOCUMENT BATCHES:
+
+Domain hints: {domain_hints_str}
+
+Themes identified: {themes_str}
+
+Entity types found:
+{entities_str}
+
+Relationship types found:
+{rels_str}
+
+CORPUS METADATA:
+{metadata_str}
+
+Create a unified, deduplicated schema. Merge similar entity/relationship types.
+Use {language} for descriptions and examples.
+
+Output ONLY valid YAML (no markdown fences, no explanation):
+
+domain:
+  name: "Descriptive Domain Name"
+  description: "1-2 sentence description"
+  language: "{language}"
+entities:
+  - name: "EntityType"
+    description: "Clear description"
+    examples:
+      - "example1"
+      - "example2"
+    attributes:
+      - "description"
+relationships:
+  - name: "RELATIONSHIP_TYPE"
+    description: "What this relationship means"
+    valid_source:
+      - "EntityType1"
+    valid_target:
+      - "EntityType2"
+
+Rules:
+- 5-12 entity types (not too many, not too few)
+- 5-10 relationship types
+- Entity names in PascalCase
+- Relationship names in UPPER_SNAKE_CASE
+- valid_source and valid_target MUST reference entity names you defined
+- Each entity needs at least 2 examples
+- Deduplicate: merge similar types into one well-named type"""
+
+    for attempt in range(2):
+        try:
+            response = llm_chat(
+                [{"role": "user", "content": prompt}],
+                temperature=0.2 if attempt == 0 else 0.1,
+            )
+            schema = _parse_yaml_response(response)
+
+            if schema and "entities" in schema and "domain" in schema:
+                # Add default sections if missing
+                _ensure_schema_defaults(schema)
+                return schema
+            else:
+                logger.warning(
+                    f"Schema synthesis attempt {attempt + 1}: invalid YAML structure"
+                )
+        except Exception as e:
+            logger.warning(f"Schema synthesis attempt {attempt + 1} failed: {e}")
+
+    # Final fallback
+    logger.warning("Schema synthesis failed, falling back to generic schema")
+    return generate_schema_from_answers("generic", language)
+
+
+def _ensure_schema_defaults(schema: Dict[str, Any]):
+    """Add default query_routing, graph, and extraction sections if missing."""
+    if "query_routing" not in schema:
+        schema["query_routing"] = {
+            "factual": {"vector_weight": 0.7, "graph_weight": 0.3},
+            "relational": {"vector_weight": 0.2, "graph_weight": 0.8},
+            "exploratory": {"vector_weight": 0.0, "graph_weight": 1.0},
+            "procedural": {"vector_weight": 0.8, "graph_weight": 0.2},
+        }
+
+    if "graph" not in schema:
+        schema["graph"] = {
+            "enable_communities": True,
+            "generate_community_summaries": True,
+            "min_community_size": 2,
+            "resolution": 1.0,
+        }
+
+    if "extraction" not in schema:
+        schema["extraction"] = {
+            "max_entities_per_chunk": 15,
+            "max_relationships_per_chunk": 20,
+            "min_confidence": 0.7,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Corpus-based schema generation orchestrator
+# ---------------------------------------------------------------------------
+
+async def generate_schema_from_corpus(
+    sources_dir: str = None,
+    pdf_dir: str = None,
+    language: str = "en",
+    max_docs: int = 100,
+    max_pages: int = 3,
+    convert_first: bool = True,
+) -> Dict[str, Any]:
+    """
+    Full corpus-based schema generation pipeline.
+
+    1. Optionally convert source documents to PDF
+    2. Sample PDFs intelligently (max_docs, distributed across subfolders)
+    3. Run two-stage LLM analysis (batch analysis → synthesis)
+    4. Return schema dict
+
+    Args:
+        sources_dir: Path to source documents
+        pdf_dir: Path to PDF output directory
+        language: Language code (default "en")
+        max_docs: Maximum documents to sample (default 100)
+        max_pages: Maximum pages per document to extract (default 3)
+        convert_first: Whether to run PDF conversion first (default True)
+
+    Returns:
+        Generated schema dict
+    """
+    if sources_dir is None:
+        sources_dir = str(SOURCES_DIR)
+    if pdf_dir is None:
+        pdf_dir = str(PDF_DIR)
+
+    sources_path = Path(sources_dir)
+    pdf_path = Path(pdf_dir)
+
+    # Step 1: Convert sources to PDF if requested
+    if convert_first:
+        try:
+            from .convert_to_pdf import process_source_documents
+            logger.info("Converting source documents to PDF for schema analysis...")
+            pdf_path.mkdir(parents=True, exist_ok=True)
+            process_source_documents(
+                sources_dir=str(sources_path),
+                pdf_output_dir=str(pdf_path),
+            )
+        except Exception as e:
+            logger.warning(f"PDF conversion failed: {e}. Trying with existing PDFs...")
+
+    # Step 2: Sample PDFs
+    samples, folder_names, file_names = sample_pdfs_for_schema(
+        sources_path, pdf_path, max_docs=max_docs, max_pages=max_pages,
+    )
+
+    if not samples:
+        logger.warning("No document samples could be extracted, using generic schema")
+        return generate_schema_from_answers("generic", language)
+
+    logger.info(f"Analyzing {len(samples)} document samples for schema generation...")
+
+    # Step 3: Stage A — batch analysis
+    batch_results = await run_batch_analysis(samples, language=language)
+
+    if len(batch_results) < 2:
+        logger.warning(
+            f"Only {len(batch_results)} valid batch results, "
+            "falling back to single-shot schema generation"
+        )
+        # Fall back to legacy single-shot approach with sampled content
+        legacy_samples = [{"filename": s["filename"], "content": s["content"]} for s in samples[:5]]
+        return generate_schema_from_documents(legacy_samples, language)
+
+    # Step 4: Stage B — synthesis
+    schema = synthesize_schema(batch_results, folder_names, file_names, language)
+
+    logger.info(
+        f"Schema generated: {len(schema.get('entities', []))} entity types, "
+        f"{len(schema.get('relationships', []))} relationship types"
+    )
+
+    return schema
+
+
+def generate_schema_from_corpus_sync(
+    sources_dir: str = None,
+    pdf_dir: str = None,
+    language: str = "en",
+    max_docs: int = 100,
+    max_pages: int = 3,
+    convert_first: bool = True,
+) -> Dict[str, Any]:
+    """
+    Synchronous wrapper for generate_schema_from_corpus.
+
+    Args:
+        sources_dir: Path to source documents
+        pdf_dir: Path to PDF output directory
+        language: Language code
+        max_docs: Maximum documents to sample
+        max_pages: Maximum pages per document to extract
+        convert_first: Whether to run PDF conversion first
+
+    Returns:
+        Generated schema dict
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # Already in async context — run in a new thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                asyncio.run,
+                generate_schema_from_corpus(
+                    sources_dir=sources_dir,
+                    pdf_dir=pdf_dir,
+                    language=language,
+                    max_docs=max_docs,
+                    max_pages=max_pages,
+                    convert_first=convert_first,
+                ),
+            )
+            return future.result()
+    else:
+        return asyncio.run(
+            generate_schema_from_corpus(
+                sources_dir=sources_dir,
+                pdf_dir=pdf_dir,
+                language=language,
+                max_docs=max_docs,
+                max_pages=max_pages,
+                convert_first=convert_first,
+            )
+        )
+
+
+# ---------------------------------------------------------------------------
+# Existing functions (kept for backward compatibility)
+# ---------------------------------------------------------------------------
+
 def is_wizard_available() -> bool:
     """Check if interactive wizard is available (questionary installed)."""
     return _QUESTIONARY_AVAILABLE
@@ -102,6 +802,9 @@ def get_document_sample(
 ) -> Tuple[List[Dict[str, str]], List[str]]:
     """
     Get a sample of documents from the sources directory.
+
+    Legacy function: only reads text-readable files (.txt, .md, .html, etc.).
+    For PDF-based sampling, use sample_pdfs_for_schema() instead.
 
     Args:
         sources_dir: Path to sources directory
@@ -172,6 +875,9 @@ def generate_schema_from_documents(
     """
     Use LLM to analyze document samples and generate a schema.
 
+    Legacy single-shot approach. For corpus-based generation,
+    use generate_schema_from_corpus() instead.
+
     Args:
         samples: List of {filename, content} dicts
         language: Language code for the schema
@@ -230,30 +936,11 @@ Only output the YAML, nothing else."""
     try:
         response = llm_chat([{"role": "user", "content": prompt}])
 
-        # Extract YAML from response
-        yaml_content = response
-        if "```yaml" in response:
-            yaml_content = response.split("```yaml")[1].split("```")[0]
-        elif "```" in response:
-            yaml_content = response.split("```")[1].split("```")[0]
+        schema = _parse_yaml_response(response)
+        if schema is None:
+            raise ValueError("Could not parse YAML from LLM response")
 
-        schema = yaml.safe_load(yaml_content)
-
-        # Add query routing defaults
-        schema["query_routing"] = {
-            "factual": {"vector_weight": 0.7, "graph_weight": 0.3},
-            "relational": {"vector_weight": 0.2, "graph_weight": 0.8},
-            "exploratory": {"vector_weight": 0.0, "graph_weight": 1.0},
-            "procedural": {"vector_weight": 0.8, "graph_weight": 0.2},
-        }
-
-        schema["graph"] = {
-            "enable_communities": True,
-            "generate_community_summaries": True,
-            "min_community_size": 2,
-            "resolution": 1.0,
-        }
-
+        _ensure_schema_defaults(schema)
         return schema
 
     except Exception as e:
@@ -495,27 +1182,43 @@ def run_non_interactive_wizard(
     use_auto: bool = True,
     domain: str = "generic",
     language: str = "en",
+    max_docs: int = 100,
 ) -> Dict[str, Any]:
     """
     Run schema generation without user interaction.
+
+    When use_auto=True, uses the corpus-based two-stage LLM pipeline
+    (convert to PDF → sample → batch analysis → synthesis).
 
     Args:
         sources_dir: Path to sources directory
         use_auto: Whether to use automatic document analysis
         domain: Domain template to use if not auto
         language: Language code
+        max_docs: Maximum documents to sample for corpus-based generation
 
     Returns:
         Generated schema dict
     """
     if use_auto:
-        samples, _ = get_document_sample(sources_dir)
-        if samples:
-            logger.info(f"Analyzing {len(samples)} documents for schema generation...")
-            schema = generate_schema_from_documents(samples, language)
-        else:
-            logger.info("No documents found, using template schema")
-            schema = generate_schema_from_answers(domain, language)
+        try:
+            schema = generate_schema_from_corpus_sync(
+                sources_dir=sources_dir,
+                pdf_dir=str(PDF_DIR),
+                language=language,
+                max_docs=max_docs,
+                convert_first=True,
+            )
+        except Exception as e:
+            logger.warning(f"Corpus-based schema generation failed: {e}")
+            logger.info("Falling back to legacy document sampling...")
+            samples, _ = get_document_sample(sources_dir)
+            if samples:
+                logger.info(f"Analyzing {len(samples)} documents for schema generation...")
+                schema = generate_schema_from_documents(samples, language)
+            else:
+                logger.info("No documents found, using template schema")
+                schema = generate_schema_from_answers(domain, language)
     else:
         schema = generate_schema_from_answers(domain, language)
 
@@ -587,4 +1290,10 @@ __all__ = [
     "generate_schema_from_answers",
     "save_schema",
     "get_document_sample",
+    # Corpus-based schema generation
+    "generate_schema_from_corpus",
+    "generate_schema_from_corpus_sync",
+    "is_generic_name",
+    "sample_pdfs_for_schema",
+    "extract_pdf_text",
 ]

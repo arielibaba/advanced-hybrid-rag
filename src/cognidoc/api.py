@@ -215,9 +215,12 @@ class CogniDoc:
             return self.config.use_yolo
         return self._check_yolo_available()
 
-    def _handle_schema_wizard(self) -> Optional[str]:
+    def _handle_schema_wizard(self, regenerate_schema: bool = False) -> Optional[str]:
         """
         Handle schema wizard flow for graph configuration.
+
+        Args:
+            regenerate_schema: Force regeneration even if schema exists
 
         Returns:
             Path to schema file, or "__skip_graph__" to skip graph, or None
@@ -228,8 +231,24 @@ class CogniDoc:
             prompt_schema_choice,
             run_interactive_wizard,
             run_non_interactive_wizard,
+            generate_schema_from_corpus_sync,
+            save_schema,
         )
-        from .constants import SOURCES_DIR
+        from .constants import SOURCES_DIR, PDF_DIR
+
+        # Force regeneration if requested
+        if regenerate_schema:
+            logger.info("Regenerating graph schema from corpus analysis...")
+            try:
+                schema = generate_schema_from_corpus_sync(
+                    sources_dir=str(SOURCES_DIR),
+                    pdf_dir=str(PDF_DIR),
+                )
+                save_schema(schema)
+                return check_existing_schema()
+            except Exception as e:
+                logger.error(f"Schema regeneration failed: {e}")
+                # Fall through to normal flow
 
         # Check for existing schema
         existing_schema = check_existing_schema()
@@ -250,6 +269,9 @@ class CogniDoc:
                 logger.info(f"Using existing schema: {existing_schema}")
                 return existing_schema
 
+        # No schema exists - auto-generate from corpus
+        logger.info("No graph schema found. Auto-generating from corpus analysis...")
+
         # No schema or user wants new one - run wizard
         if is_wizard_available():
             schema = run_interactive_wizard(SOURCES_DIR)
@@ -257,12 +279,12 @@ class CogniDoc:
                 return check_existing_schema()  # Return path to saved schema
             else:
                 # User cancelled - use non-interactive fallback
-                logger.info("Wizard cancelled, generating default schema")
+                logger.info("Wizard cancelled, generating schema from corpus...")
                 run_non_interactive_wizard(SOURCES_DIR, use_auto=True)
                 return check_existing_schema()
         else:
-            # No interactive mode - generate automatically
-            logger.info("Generating schema automatically (questionary not installed)")
+            # No interactive mode - generate automatically from corpus
+            logger.info("Generating schema automatically from corpus...")
             run_non_interactive_wizard(SOURCES_DIR, use_auto=True)
             return check_existing_schema()
 
@@ -283,6 +305,7 @@ class CogniDoc:
         graph_config_path: Optional[str] = None,
         skip_schema_wizard: bool = False,
         full_reindex: bool = False,
+        regenerate_schema: bool = False,
     ) -> IngestionResult:
         """
         Ingest documents from path(s).
@@ -308,6 +331,7 @@ class CogniDoc:
             use_cache: Use embedding cache
             graph_config_path: Path to custom graph configuration
             skip_schema_wizard: Skip the interactive schema wizard
+            regenerate_schema: Force schema regeneration even if one exists
 
         Returns:
             IngestionResult with statistics
@@ -319,7 +343,9 @@ class CogniDoc:
         actual_skip_graph = skip_graph or not self.config.use_graph
 
         if not actual_skip_graph and graph_config_path is None and not skip_schema_wizard:
-            graph_config_path = self._handle_schema_wizard()
+            graph_config_path = self._handle_schema_wizard(
+                regenerate_schema=regenerate_schema
+            )
             if graph_config_path == "__skip_graph__":
                 actual_skip_graph = True
                 graph_config_path = None

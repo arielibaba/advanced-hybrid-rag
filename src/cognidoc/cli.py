@@ -7,6 +7,7 @@ Commands:
 - cognidoc serve: Launch the Gradio web interface
 - cognidoc init: Initialize a new CogniDoc project
 - cognidoc info: Show configuration information
+- cognidoc schema-generate: Auto-generate graph schema from corpus
 """
 
 import argparse
@@ -34,6 +35,7 @@ def cmd_ingest(args):
         skip_yolo=args.no_yolo,
         skip_graph=args.no_graph,
         full_reindex=args.full_reindex,
+        regenerate_schema=args.regenerate_schema,
     )
 
     print(f"\nIngestion complete:")
@@ -210,6 +212,46 @@ LLM_TOP_P=0.85
     path.write_text(template)
 
 
+def cmd_schema_generate(args):
+    """Handle the schema-generate command."""
+    from .schema_wizard import (
+        check_existing_schema,
+        generate_schema_from_corpus_sync,
+        save_schema,
+    )
+    from .constants import SOURCES_DIR, PDF_DIR
+
+    sources_dir = args.source_dir or str(SOURCES_DIR)
+    pdf_dir = str(PDF_DIR)
+
+    # Check existing
+    existing = check_existing_schema()
+    if existing and not args.regenerate:
+        print(f"Schema already exists at: {existing}")
+        print("Use --regenerate to overwrite.")
+        return
+
+    print(f"Generating schema from corpus in: {sources_dir}")
+    print(f"  Language: {args.language}")
+    print(f"  Max documents: {args.max_docs}")
+    print(f"  Max pages per document: {args.max_pages}")
+
+    schema = generate_schema_from_corpus_sync(
+        sources_dir=sources_dir,
+        pdf_dir=pdf_dir,
+        language=args.language,
+        max_docs=args.max_docs,
+        max_pages=args.max_pages,
+        convert_first=True,
+    )
+
+    output_path = save_schema(schema)
+    print(f"\nSchema generated and saved to: {output_path}")
+    print(f"  Domain: {schema.get('domain', {}).get('name', 'Unknown')}")
+    print(f"  Entity types: {len(schema.get('entities', []))}")
+    print(f"  Relationship types: {len(schema.get('relationships', []))}")
+
+
 def cmd_info(args):
     """Handle the info command."""
     from .api import CogniDoc
@@ -251,10 +293,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  cognidoc init --schema --prompts       Initialize a new project
-  cognidoc ingest ./documents            Ingest documents
+  cognidoc init --schema --prompts           Initialize a new project
+  cognidoc schema-generate ./data/sources   Auto-generate graph schema
+  cognidoc ingest ./documents               Ingest documents
   cognidoc query "What is the main topic?"
-  cognidoc serve --port 8080             Launch web UI
+  cognidoc serve --port 8080                Launch web UI
 
 For more information: https://github.com/arielibaba/cognidoc
         """,
@@ -302,6 +345,11 @@ For more information: https://github.com/arielibaba/cognidoc
         "--full-reindex",
         action="store_true",
         help="Force full re-ingestion of all documents (ignore incremental manifest)",
+    )
+    ingest_parser.add_argument(
+        "--regenerate-schema",
+        action="store_true",
+        help="Force graph schema regeneration even if one already exists",
     )
 
     # --- query command ---
@@ -389,6 +437,40 @@ For more information: https://github.com/arielibaba/cognidoc
         help="Copy prompt templates",
     )
 
+    # --- schema-generate command ---
+    schema_parser = subparsers.add_parser(
+        "schema-generate",
+        help="Auto-generate graph schema from document corpus",
+    )
+    schema_parser.add_argument(
+        "source_dir",
+        nargs="?",
+        default=None,
+        help="Path to source documents (default: data/sources/)",
+    )
+    schema_parser.add_argument(
+        "--language",
+        default="en",
+        help="Schema language code (default: en)",
+    )
+    schema_parser.add_argument(
+        "--max-docs",
+        type=int,
+        default=100,
+        help="Maximum documents to sample (default: 100)",
+    )
+    schema_parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=3,
+        help="Maximum pages per document to extract (default: 3)",
+    )
+    schema_parser.add_argument(
+        "--regenerate",
+        action="store_true",
+        help="Regenerate even if schema already exists",
+    )
+
     # --- info command ---
     info_parser = subparsers.add_parser(
         "info",
@@ -409,6 +491,7 @@ For more information: https://github.com/arielibaba/cognidoc
         "serve": cmd_serve,
         "init": cmd_init,
         "info": cmd_info,
+        "schema-generate": cmd_schema_generate,
     }
 
     try:

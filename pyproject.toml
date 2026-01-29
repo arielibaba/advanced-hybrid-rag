@@ -37,6 +37,7 @@ dependencies = [
 
     # PDF processing
     "pdf2image>=1.16",
+    "pymupdf>=1.24",
 
     # Text processing
     "beautifulsoup4>=4.12",
@@ -139,6 +140,8 @@ all = [
     "docling-core>=2.0",
     # Wizard
     "questionary>=2.0",
+    # PDF text extraction (schema generation)
+    "pymupdf>=1.24",
 ]
 
 # Development
