@@ -553,13 +553,21 @@ class HybridRetriever:
 
         # Respect config routing strategy override (for benchmarking/testing)
         if self.config and self.config.routing.strategy == "vector_only":
+            skip_vector = False
             skip_graph = True
+            analysis.use_vector = True
+            analysis.use_graph = False
         elif self.config and self.config.routing.strategy == "graph_only":
             skip_vector = True
+            skip_graph = False
+            analysis.use_vector = False
+            analysis.use_graph = True
         elif self.config and self.config.routing.strategy == "hybrid":
             # Force both vector and graph retrieval
             skip_vector = False
             skip_graph = False
+            analysis.use_vector = True
+            analysis.use_graph = True
 
         # =======================================================================
         # PARALLEL RETRIEVAL: Vector and Graph run concurrently
