@@ -117,7 +117,7 @@ MODEL_SPECS = {
     # -------------------------------------------------------------------------
     # Gemini Models (Google)
     # -------------------------------------------------------------------------
-    "gemini-2.5-flash": {
+    "gemini-3-flash-preview": {
         "provider": "gemini",
         "context_window": 1_048_576,  # 1M tokens
         "max_output_tokens": 65_536,  # 65K with thinking, 8K standard
@@ -349,7 +349,7 @@ def get_model_specs(model_name: str) -> dict:
     Get specifications for a model.
 
     Args:
-        model_name: Name of the model (e.g., "gemini-2.5-flash", "gpt-4o")
+        model_name: Name of the model (e.g., "gemini-3-flash-preview", "gpt-4o")
 
     Returns:
         Dict with model specifications. Falls back to DEFAULT_MODEL_SPECS if unknown.
@@ -358,7 +358,7 @@ def get_model_specs(model_name: str) -> dict:
     if model_name in MODEL_SPECS:
         return {**DEFAULT_MODEL_SPECS, **MODEL_SPECS[model_name]}
 
-    # Try prefix match (e.g., "gemini-2.5-flash-latest" -> "gemini-2.5-flash")
+    # Try prefix match (e.g., "gemini-3-flash-preview-latest" -> "gemini-3-flash-preview")
     for known_model in MODEL_SPECS:
         if model_name.startswith(known_model) or known_model.startswith(model_name.split(":")[0]):
             return {**DEFAULT_MODEL_SPECS, **MODEL_SPECS[known_model]}

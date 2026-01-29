@@ -34,7 +34,7 @@ from .utils.embedding_providers import (
 
 # Default LLM models per provider
 DEFAULT_LLM_MODELS = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-3-flash-preview",
     "openai": "gpt-4o-mini",
     "anthropic": "claude-3-haiku-20240307",
     "ollama": "granite3.3:8b",
@@ -77,7 +77,7 @@ class CogniDocConfig:
         """Apply smart defaults based on provider selection."""
         # Default LLM model
         if self.llm_model is None:
-            self.llm_model = DEFAULT_LLM_MODELS.get(self.llm_provider, "gemini-2.5-flash")
+            self.llm_model = DEFAULT_LLM_MODELS.get(self.llm_provider, "gemini-3-flash-preview")
 
         # Default embedding model
         if self.embedding_model is None:

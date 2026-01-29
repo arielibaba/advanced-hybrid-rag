@@ -139,7 +139,7 @@ Without YOLO, the system uses simple page-level extraction.
 
 | Provider | Model | Embeddings | API Key Env Variable |
 |----------|-------|------------|----------------------|
-| **Gemini** (default) | `gemini-2.5-flash` | `text-embedding-004` | `GOOGLE_API_KEY` |
+| **Gemini** (default) | `gemini-3-flash-preview` | `text-embedding-004` | `GOOGLE_API_KEY` |
 | **OpenAI** | `gpt-4o-mini` | `text-embedding-3-small` | `OPENAI_API_KEY` |
 | **Anthropic** | `claude-3-haiku` | - | `ANTHROPIC_API_KEY` |
 | **Ollama** | `granite3.3:8b` | `qwen3-embedding:4b-q8_0` | Local (no key) |
@@ -154,7 +154,7 @@ ANTHROPIC_API_KEY=your-key
 
 # Provider settings
 DEFAULT_LLM_PROVIDER=gemini          # gemini, openai, anthropic, ollama
-DEFAULT_LLM_MODEL=gemini-2.5-flash
+DEFAULT_LLM_MODEL=gemini-3-flash-preview
 LLM_TEMPERATURE=0.7
 
 # Retrieval tuning
