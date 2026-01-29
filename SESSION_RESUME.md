@@ -2128,6 +2128,7 @@ Audit des références de données de test dans SESSION_RESUME.md. Suppression d
 |-------|-----------|-------------|
 | **Audit références données de test** | `SESSION_RESUME.md` | Vérification de toutes les mentions de "théologie morale" dans le fichier. Les sessions 12-15 (documentation historique de tests manuels) et session 17 (réécriture benchmarks) sont correctes. |
 | **Fix "Prochaines étapes" sessions 18 & 19** | `SESSION_RESUME.md` | Item #1 référençait "Tester sur le corpus théologie morale" — remplacé par validation via benchmarks internes. Catégorie changée de "Bug" à "Qualité" (le parser est déjà couvert par 12 tests unitaires dans `test_optimizations.py`). |
+| **Vérification cohérence CLAUDE.md ↔ SESSION_RESUME.md** | `CLAUDE.md` | Confirmé que CLAUDE.md ne contient aucune référence au corpus théologie morale. Les deux fichiers sont alignés : tests référencent le domaine IA & médecine (`tests/fixtures/test_article.md`), données externes documentées uniquement comme override optionnel via `COGNIDOC_DATA_DIR`. |
 
 ### Modifications clés
 
@@ -2147,11 +2148,13 @@ Audit des références de données de test dans SESSION_RESUME.md. Suppression d
 | Hash | Message |
 |------|---------|
 | `40ec184` | Remove external corpus references from SESSION_RESUME.md next steps |
+| `b87887c` | Update SESSION_RESUME.md with session 20 |
 
 ### État final
 
-- **1 commit** poussé sur origin/master
+- **2 commits** poussés sur origin/master
 - **SESSION_RESUME.md** nettoyé de toute dépendance implicite à des données externes
+- **Cohérence CLAUDE.md ↔ SESSION_RESUME.md** vérifiée — aucune divergence sur les données de test
 
 ### Prochaines étapes identifiées
 
