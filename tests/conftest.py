@@ -46,6 +46,26 @@ def cognidoc_session():
     return _session_cognidoc
 
 
+@pytest.fixture
+def release_qdrant_lock():
+    """
+    Release the Qdrant storage lock held by the session-scoped CogniDoc instance.
+
+    The cognidoc_session fixture keeps a QdrantClient open on data/vector_store.
+    Full pipeline tests that call build_indexes() need exclusive access to that folder.
+    This fixture closes the session's retriever before the test and lets it lazily reload after.
+    """
+    global _session_cognidoc
+
+    if _session_cognidoc is not None and _session_cognidoc._retriever is not None:
+        _session_cognidoc._retriever.close()
+        _session_cognidoc._retriever = None
+
+    yield
+
+    # The session instance will lazily reload the retriever on next query()
+
+
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line(

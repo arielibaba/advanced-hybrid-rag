@@ -469,6 +469,15 @@ class VectorIndex:
 
         logger.info(f"Saved index to {path}")
 
+    def close(self) -> None:
+        """Close the Qdrant client to release the storage folder lock."""
+        if self.client is not None:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
+
     @classmethod
     def load(cls, path: str, qdrant_path: str) -> "VectorIndex":
         """Load index from disk."""

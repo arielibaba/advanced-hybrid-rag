@@ -367,6 +367,15 @@ class HybridRetriever:
 
         return status
 
+    def close(self) -> None:
+        """Close all retrieval components to release resources."""
+        if self._vector_index is not None:
+            self._vector_index.close()
+            self._vector_index = None
+        self._keyword_index = None
+        self._bm25_index = None
+        self._graph_retriever = None
+
     def is_loaded(self) -> bool:
         """Check if at least vector index is loaded."""
         return self._vector_index is not None

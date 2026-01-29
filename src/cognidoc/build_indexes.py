@@ -121,6 +121,10 @@ def build_indexes(recreate: bool = False):
     child_index_path = Path(INDEX_DIR) / CHILD_DOCUMENTS_INDEX
     child_index.save(str(child_index_path))
 
+    # Close the Qdrant client to release the storage folder lock
+    # so that subsequent VectorIndex.load() calls can access it
+    child_index.close()
+
     # Create parent documents keyword index
     logger.info("Creating parent documents keyword index...")
     parent_index = KeywordIndex()

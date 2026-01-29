@@ -125,7 +125,7 @@ class TestE2EFullPipeline:
     Run with: pytest tests/test_e2e_pipeline.py -v --run-slow
     """
 
-    def test_full_pipeline_ingestion(self, project_root, test_document_path):
+    def test_full_pipeline_ingestion(self, project_root, test_document_path, release_qdrant_lock):
         """
         Test full pipeline: ingest test document → query.
 
@@ -172,7 +172,7 @@ class TestE2EFullPipeline:
             if dest_path.exists():
                 dest_path.unlink()
 
-    def test_full_pipeline_with_graphrag(self, project_root, test_document_path):
+    def test_full_pipeline_with_graphrag(self, project_root, test_document_path, release_qdrant_lock):
         """
         Test full pipeline with GraphRAG enabled.
 
