@@ -40,6 +40,7 @@ Transform any document collection into a searchable knowledge base with intellig
 - [Architecture](#architecture)
 - [CLI Reference](#cli-reference)
 - [REST API](#rest-api)
+- [Docker](#docker)
 - [Development](#development)
 - [Roadmap](#roadmap)
 - [License](#license)
@@ -549,6 +550,59 @@ answer = result[0][-1]["content"][0]["text"]
 | `POST /api/refresh_metrics` | Get performance metrics |
 | `POST /api/export_csv` | Export metrics as CSV |
 | `POST /api/export_json` | Export metrics as JSON |
+
+---
+
+## Docker
+
+### Build
+
+```bash
+docker build -t cognidoc .
+```
+
+### Run the Web Interface
+
+```bash
+docker run -p 7860:7860 \
+    -e GOOGLE_API_KEY=your-key \
+    -v ./data/sources:/app/data/sources \
+    -v ./data/indexes:/app/data/indexes \
+    -v ./data/vector_store:/app/data/vector_store \
+    -v ./config:/app/config \
+    cognidoc
+```
+
+Open http://localhost:7860 after startup.
+
+### Ingest Documents
+
+```bash
+docker run \
+    -e GOOGLE_API_KEY=your-key \
+    -v ./data/sources:/app/data/sources \
+    -v ./data:/app/data \
+    -v ./config:/app/config \
+    cognidoc \
+    uv run cognidoc ingest ./data/sources --llm gemini --embedding ollama
+```
+
+### Using a `.env` File
+
+```bash
+docker run -p 7860:7860 \
+    --env-file .env \
+    -v ./data:/app/data \
+    -v ./config:/app/config \
+    cognidoc
+```
+
+### Notes
+
+- The image includes LibreOffice for Office document conversion (DOCX, PPTX, XLSX).
+- YOLO detection requires mounting the model: `-v ./models:/app/models`.
+- For Ollama access from the container, add `--network host` or point to the host: `-e OLLAMA_HOST=http://host.docker.internal:11434`.
+- Persistent data (indexes, vector store, cache) should be mounted as volumes to avoid re-ingestion on container restart.
 
 ---
 
