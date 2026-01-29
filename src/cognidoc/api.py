@@ -282,6 +282,7 @@ class CogniDoc:
         use_cache: bool = True,
         graph_config_path: Optional[str] = None,
         skip_schema_wizard: bool = False,
+        full_reindex: bool = False,
     ) -> IngestionResult:
         """
         Ingest documents from path(s).
@@ -372,6 +373,7 @@ class CogniDoc:
                 skip_graph=actual_skip_graph,
                 graph_config_path=graph_config_path,
                 source_files=source_files,
+                full_reindex=full_reindex,
             ))
 
             # Extract stats from pipeline result

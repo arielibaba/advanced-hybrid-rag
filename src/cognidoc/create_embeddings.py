@@ -141,6 +141,7 @@ def collect_chunks_to_embed(
     use_cache: bool,
     force_reembed: bool,
     cache,
+    file_filter: list = None,
 ) -> Tuple[List[ChunkToEmbed], Dict[str, int]]:
     """
     Collect all chunks that need to be embedded.
@@ -171,6 +172,10 @@ def collect_chunks_to_embed(
 
         # Skip directories
         if not file_path.is_file():
+            continue
+
+        # Skip files not matching incremental filter
+        if file_filter and not any(file_path.name.startswith(stem) for stem in file_filter):
             continue
 
         # Skip parent chunks (but not child chunks)
@@ -297,6 +302,7 @@ def create_embeddings(
     force_reembed: bool = False,
     batch_size: int = DEFAULT_BATCH_SIZE,
     max_concurrent: int = MAX_CONCURRENT_REQUESTS,
+    file_filter: list = None,
 ) -> Dict[str, int]:
     """
     Generate embeddings for all chunk files in chunks_dir.
@@ -341,7 +347,8 @@ def create_embeddings(
     logger.info("Scanning files and checking cache...")
 
     chunks_to_embed, stats = collect_chunks_to_embed(
-        chunks_path, embeddings_path, embed_model, use_cache, force_reembed, cache
+        chunks_path, embeddings_path, embed_model, use_cache, force_reembed, cache,
+        file_filter=file_filter,
     )
 
     logger.info(f"Found {stats['to_embed']} chunks to embed, {stats['cached']} from cache")

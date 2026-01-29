@@ -51,7 +51,9 @@ from .constants import (
     CHECKPOINT_FILE,
     MAX_CONSECUTIVE_QUOTA_ERRORS,
     CHECKPOINT_SAVE_INTERVAL,
+    INGESTION_MANIFEST_PATH,
 )
+from .ingestion_manifest import IngestionManifest
 from .checkpoint import PipelineCheckpoint, FailedItem
 
 from .utils.logger import logger, PipelineTimer
@@ -417,6 +419,16 @@ def parse_args():
         action="store_true",
         help="Disable async entity extraction (use sequential mode)"
     )
+    parser.add_argument(
+        "--full-reindex",
+        action="store_true",
+        help="Force full re-ingestion of all documents (ignore incremental manifest)"
+    )
+    parser.add_argument(
+        "--no-incremental",
+        action="store_true",
+        help="Disable incremental detection"
+    )
     return parser.parse_args()
 
 
@@ -441,6 +453,9 @@ async def run_ingestion_pipeline_async(
     entity_max_concurrent: int = 4,
     use_async_extraction: bool = True,
     source_files: list = None,
+    # Incremental ingestion parameters
+    incremental: bool = True,
+    full_reindex: bool = False,
     # Checkpoint/resume parameters
     resume_from_checkpoint: bool = True,
     max_consecutive_quota_errors: int = None,
@@ -494,6 +509,43 @@ async def run_ingestion_pipeline_async(
     # 1. Clear GPU memory
     pipeline_timer.stage("clear_cache")
     clear_pytorch_cache()
+
+    # === INCREMENTAL INGESTION LOGIC ===
+    manifest_path = Path(INGESTION_MANIFEST_PATH)
+    manifest = None
+    incremental_stems = None  # None = process everything (full mode)
+
+    if not full_reindex and incremental and not source_files:
+        manifest = IngestionManifest.load(manifest_path)
+        if manifest is not None:
+            new_files, modified_files, new_stems = manifest.get_new_and_modified_files(
+                Path(SOURCES_DIR), source_files
+            )
+            if not new_files and not modified_files:
+                logger.info("No new or modified files detected. Nothing to ingest.")
+                pipeline_summary = pipeline_timer.end()
+                return stats
+
+            incremental_stems = list(new_stems)
+            logger.info(
+                f"Incremental mode: {len(new_files)} new, {len(modified_files)} modified files "
+                f"({len(incremental_stems)} stems to process)"
+            )
+
+            # Clean up old intermediate files for modified documents
+            for mod_file in modified_files:
+                _cleanup_intermediate_files(mod_file.stem)
+
+            # Override source_files to only process new/modified
+            source_files = [str(f) for f in new_files + modified_files]
+        else:
+            logger.info("First ingestion detected (no manifest). Running full pipeline.")
+    elif full_reindex:
+        logger.info("Full reindex mode. Processing all files.")
+
+    # Create manifest for tracking (will be saved at end)
+    if manifest is None:
+        manifest = IngestionManifest()
 
     # Track PDF stems for filtering in subsequent stages
     # Compute pdf_filter directly from source_files to ensure filtering works
@@ -656,7 +708,8 @@ async def run_ingestion_pipeline_async(
                     SEMANTIC_BREAKPOINT_METHOD,
                     SEMANTIC_BREAKPOINT_VALUE,
                     SENTENCE_SPLIT_REGEX,
-                    verbose=True
+                    verbose=True,
+                    file_filter=incremental_stems,
                 )
 
             def run_table_chunking():
@@ -669,7 +722,8 @@ async def run_ingestion_pipeline_async(
                     int(0.25 * MAX_CHUNK_SIZE),
                     CHUNKS_DIR,
                     use_unified_llm=True,
-                    temperature=TEMPERATURE_GENERATION
+                    temperature=TEMPERATURE_GENERATION,
+                    file_filter=incremental_stems,
                 )
 
             # Run both chunking operations in parallel
@@ -696,6 +750,7 @@ async def run_ingestion_pipeline_async(
                 EMBED_MODEL,
                 use_cache=use_cache,
                 force_reembed=force_reembed,
+                file_filter=incremental_stems,
             )
             stats["embeddings"] = embed_stats
             logger.info("Embedding generation completed")
@@ -835,6 +890,7 @@ async def run_ingestion_pipeline_async(
                         processed_chunk_ids=processed_chunk_ids,
                         max_consecutive_quota_errors=max_consecutive_quota_errors,
                         on_progress_callback=on_extraction_progress,
+                        file_filter=incremental_stems,
                     )
 
                     # Update checkpoint with extraction state
@@ -855,6 +911,7 @@ async def run_ingestion_pipeline_async(
                     extraction_results = extract_from_chunks_dir(
                         chunks_dir=CHUNKS_DIR,
                         config=graph_config,
+                        file_filter=incremental_stems,
                     )
                     extraction_state = {"interrupted": False}
 
@@ -888,17 +945,30 @@ async def run_ingestion_pipeline_async(
 
                     # Build knowledge graph
                     pipeline_timer.stage("graph_building")
-                    logger.info("Building knowledge graph...")
                     checkpoint.set_stage("graph_building")
 
-                    # Build graph from extraction results
-                    kg = build_knowledge_graph(
-                        extraction_results=extraction_results,
-                        config=graph_config,
-                        detect_communities=True,
-                        generate_summaries=False,  # We'll do this with checkpoint support
-                        save_graph=False,  # We'll save after all steps
-                    )
+                    if incremental_stems and has_valid_knowledge_graph():
+                        # INCREMENTAL: Load existing graph and merge new entities
+                        logger.info("Incremental mode: loading existing graph and merging new entities...")
+                        kg = KnowledgeGraph.load(config=graph_config)
+                        merge_stats = kg.build_from_extraction_results(extraction_results)
+                        logger.info(
+                            f"Merged into existing graph: {merge_stats.get('entities_added', 0)} added, "
+                            f"{merge_stats.get('entities_merged', 0)} merged"
+                        )
+                        # Re-detect communities on the merged graph
+                        if kg.config.graph.enable_communities:
+                            kg.detect_communities()
+                    else:
+                        # FULL: Build new graph from scratch
+                        logger.info("Building knowledge graph...")
+                        kg = build_knowledge_graph(
+                            extraction_results=extraction_results,
+                            config=graph_config,
+                            detect_communities=True,
+                            generate_summaries=False,  # We'll do this with checkpoint support
+                            save_graph=False,  # We'll save after all steps
+                        )
 
             # =====================================================================
             # COMMON PATH: Generate community summaries (for both resume and new graph)
@@ -998,6 +1068,19 @@ async def run_ingestion_pipeline_async(
     else:
         logger.info("Skipping knowledge graph building")
 
+    # Update ingestion manifest after successful processing
+    try:
+        if source_files:
+            for src_file in source_files:
+                src_path = Path(src_file)
+                if src_path.exists():
+                    manifest.record_file(src_path, Path(SOURCES_DIR), src_path.stem)
+        else:
+            manifest.record_all_sources(Path(SOURCES_DIR))
+        manifest.save(manifest_path)
+    except Exception as e:
+        logger.warning(f"Failed to save ingestion manifest: {e}")
+
     # End pipeline
     pipeline_summary = pipeline_timer.end()
 
@@ -1006,6 +1089,21 @@ async def run_ingestion_pipeline_async(
     print(report)
 
     return stats
+
+
+def _cleanup_intermediate_files(stem: str):
+    """Remove intermediate files for a given PDF stem (for re-ingestion of modified files)."""
+    dirs_and_patterns = [
+        (PROCESSED_DIR, f"{stem}_*"),
+        (CHUNKS_DIR, f"{stem}_*"),
+        (EMBEDDINGS_DIR, f"{stem}_*"),
+    ]
+    for dir_path, pattern in dirs_and_patterns:
+        dir_p = Path(dir_path)
+        if dir_p.exists():
+            for f in dir_p.glob(pattern):
+                f.unlink()
+                logger.debug(f"Cleaned up intermediate file: {f.name}")
 
 
 def main():
@@ -1033,6 +1131,9 @@ def main():
         use_yolo_batching=not args.no_yolo_batching,
         entity_max_concurrent=args.entity_max_concurrent,
         use_async_extraction=not args.no_async_extraction,
+        # Incremental ingestion parameters
+        incremental=not args.no_incremental,
+        full_reindex=args.full_reindex,
     ))
 
 

@@ -33,6 +33,7 @@ def cmd_ingest(args):
         source=args.source,
         skip_yolo=args.no_yolo,
         skip_graph=args.no_graph,
+        full_reindex=args.full_reindex,
     )
 
     print(f"\nIngestion complete:")
@@ -296,6 +297,11 @@ For more information: https://github.com/arielibaba/cognidoc
         "--no-graph",
         action="store_true",
         help="Disable GraphRAG processing",
+    )
+    ingest_parser.add_argument(
+        "--full-reindex",
+        action="store_true",
+        help="Force full re-ingestion of all documents (ignore incremental manifest)",
     )
 
     # --- query command ---

@@ -12,6 +12,7 @@ CogniDoc is a Hybrid RAG (Vector + GraphRAG) document assistant that converts mu
 - Parent-child chunk hierarchy for context-aware retrieval
 - Custom semantic chunking with breakpoint detection
 - Custom ReAct agent (~300 lines in `agent.py`) instead of LangGraph for fine-grained control
+- Incremental ingestion via manifest tracking (only new/modified documents are reprocessed)
 
 ## Commands
 
@@ -72,6 +73,8 @@ Resume from specific stage:
 --skip-graph          # Skip knowledge graph building
 --skip-resolution     # Skip entity resolution (semantic deduplication)
 --force-reembed       # Re-embed all (ignore cache)
+--full-reindex        # Force full re-ingestion (ignore incremental manifest)
+--no-incremental      # Disable incremental detection
 ```
 
 ## Architecture
@@ -103,6 +106,7 @@ Source code is in `src/cognidoc/` but installs as `cognidoc` package:
 | `schema_wizard.py` | Interactive/auto schema generation for GraphRAG |
 | `constants.py` | Central config (paths, thresholds, model names) |
 | `checkpoint.py` | Resumable pipeline execution with atomic saves |
+| `ingestion_manifest.py` | Incremental ingestion tracking (new/modified file detection via SHA-256) |
 | `cli.py` | Command-line interface (ingest, query, serve, info) |
 | `graph_config.py` | GraphRAG schema loading and validation |
 | `utils/llm_client.py` | Singleton LLM client (Gemini default) |
@@ -129,6 +133,39 @@ Documents → PDF Conversion → Images (600 DPI) → YOLO Detection
                                                       ↓
                                             Hybrid Retriever
 ```
+
+### Incremental Ingestion
+
+The pipeline is **incremental by default**. An ingestion manifest (`data/indexes/ingestion_manifest.json`) tracks source files by path, size, and SHA-256 content hash.
+
+**Behavior on re-ingestion:**
+
+| Scenario | Pipeline behavior |
+|----------|-------------------|
+| New files added to `data/sources/` | Only new files processed through stages 1-10 |
+| Existing file modified | Old intermediate files cleaned up, file reprocessed |
+| No changes detected | Pipeline exits immediately ("Nothing to ingest") |
+| `--full-reindex` flag | Full pipeline, manifest rebuilt |
+| First ingestion (no manifest) | Full pipeline, manifest created at end |
+
+**Stage-by-stage incremental behavior:**
+
+| Stage | Incremental mode |
+|-------|-----------------|
+| 1-5 (Conversion → Descriptions) | `source_files` limited to new/modified only |
+| 6-7 (Chunking) | `file_filter` limits to new stems |
+| 8 (Embeddings) | `file_filter` + content-hash cache |
+| 9 (Index building) | Rebuilt from ALL embeddings on disk (old + new) |
+| 10 (Entity extraction) | `file_filter` limits to new chunk stems |
+| 11 (Graph building) | Existing graph loaded via `KnowledgeGraph.load()`, new entities merged via `build_from_extraction_results()` |
+| 12 (Communities/Resolution) | Re-run on full merged graph |
+
+**Key implementation details:**
+- `file_filter` parameter on `chunk_text_data()`, `chunk_table_data()`, `create_embeddings()`, `extract_from_chunks_dir()`, `extract_from_chunks_dir_async()`, `run_extraction_async()` — filters files by PDF stem prefix
+- Index rebuilding always uses `recreate=True` because `Document.id` uses random UUIDs (upsert would create duplicates) and BM25 has no incremental mode
+- Manifest saved only after successful pipeline completion (crash = re-run processes same files)
+- Modified files: `_cleanup_intermediate_files(stem)` deletes old processed/chunks/embeddings before reprocessing
+- Deleted files: not handled automatically (use `--full-reindex`). Future enhancement: `--prune` flag.
 
 ### Query Processing
 

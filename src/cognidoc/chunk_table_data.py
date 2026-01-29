@@ -167,6 +167,7 @@ def chunk_table_data(
     model_options: Optional[Dict] = None,
     use_unified_llm: bool = True,
     temperature: float = 0.7,
+    file_filter: list = None,
 ) -> None:
     """
     Opens markdown tables and split them into chunks, then stores the resulting tables chunks as well as summaries in dedicated folders.
@@ -200,6 +201,8 @@ def chunk_table_data(
     if not cols:
         for table_path in tables_path.rglob("*_Table_*.md"):
             if table_path.is_file():
+                if file_filter and not any(table_path.name.startswith(stem) for stem in file_filter):
+                    continue
                 print(f"\nReading file: {table_path}")
                 with open(table_path, "r", encoding="utf-8") as f:
                     md_table = f.read()
@@ -221,6 +224,8 @@ def chunk_table_data(
     elif len(cols) == len(list(tables_path.rglob("*_Table_*.md"))):
         for idx, table_path in enumerate(tables_path.rglob("*.md")):
             if table_path.is_file():
+                if file_filter and not any(table_path.name.startswith(stem) for stem in file_filter):
+                    continue
                 print(f"\nReading file: {table_path}")
                 with open(table_path, "r", encoding="utf-8") as f:
                     md_table = f.read()

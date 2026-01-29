@@ -385,6 +385,7 @@ def chunk_text_data(
     breakpoint_threshold_amount: float,
     sentence_split_regex: str,
     verbose: bool,
+    file_filter: list = None,
 ):
     """
     Performs txt documents chunking using semantic chunking.
@@ -417,6 +418,8 @@ def chunk_text_data(
     # Process original text files
     for file_path in documents_path.rglob("*_Text.md"):
         if file_path.is_file():
+            if file_filter and not any(file_path.name.startswith(stem) for stem in file_filter):
+                continue
             parent_chunks = semantic_chunk_text_file(
                 file_path,
                 embed_model_name,
@@ -451,6 +454,8 @@ def chunk_text_data(
     # Process image description files
     for file_path in documents_path.rglob("*_description.txt"):
         if file_path.is_file():
+            if file_filter and not any(file_path.name.startswith(stem) for stem in file_filter):
+                continue
             with open(file_path, "r", encoding="utf-8") as f:
                 description = f.read()
 

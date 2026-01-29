@@ -488,6 +488,7 @@ def extract_from_chunks_dir(
     include_parent_chunks: bool = True,
     include_child_chunks: bool = False,
     include_descriptions: bool = True,
+    file_filter: list = None,
 ) -> List[ExtractionResult]:
     """
     Extract entities and relationships from all chunks in a directory.
@@ -518,6 +519,10 @@ def extract_from_chunks_dir(
     results = []
 
     for chunk_file in sorted(chunks_path.rglob("*.txt")):
+        # Skip files not matching incremental filter
+        if file_filter and not any(chunk_file.name.startswith(stem) for stem in file_filter):
+            continue
+
         # Classify chunk type
         is_parent_only = "_parent_chunk_" in chunk_file.name and "_child_chunk_" not in chunk_file.name
         is_child = "_child_chunk_" in chunk_file.name
@@ -761,6 +766,7 @@ async def extract_from_chunks_dir_async(
     processed_chunk_ids: Optional[set] = None,
     max_consecutive_quota_errors: int = None,
     on_progress_callback: Optional[callable] = None,
+    file_filter: list = None,
 ) -> Tuple[List[ExtractionResult], Dict[str, Any]]:
     """
     Async version of extract_from_chunks_dir with concurrent extraction and checkpoint support.
@@ -824,6 +830,10 @@ async def extract_from_chunks_dir_async(
     chunk_files = []
     skipped_already_processed = 0
     for chunk_file in sorted(chunks_path.rglob("*.txt")):
+        # Skip files not matching incremental filter
+        if file_filter and not any(chunk_file.name.startswith(stem) for stem in file_filter):
+            continue
+
         chunk_id = chunk_file.stem
 
         # Skip already processed chunks (resume support)
@@ -1058,6 +1068,7 @@ def run_extraction_async(
     processed_chunk_ids: Optional[set] = None,
     max_consecutive_quota_errors: int = None,
     on_progress_callback: Optional[callable] = None,
+    file_filter: list = None,
 ) -> Tuple[List[ExtractionResult], Dict[str, Any]]:
     """
     Synchronous wrapper for async extraction with checkpoint support.
@@ -1120,6 +1131,7 @@ def run_extraction_async(
                     processed_chunk_ids=processed_chunk_ids,
                     max_consecutive_quota_errors=max_consecutive_quota_errors,
                     on_progress_callback=on_progress_callback,
+                    file_filter=file_filter,
                 )
             )
             return future.result()
@@ -1137,6 +1149,7 @@ def run_extraction_async(
                 processed_chunk_ids=processed_chunk_ids,
                 max_consecutive_quota_errors=max_consecutive_quota_errors,
                 on_progress_callback=on_progress_callback,
+                file_filter=file_filter,
             )
         )
 
