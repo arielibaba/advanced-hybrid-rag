@@ -2002,10 +2002,114 @@ uv run pytest tests/ -v --ignore=tests/test_00_e2e_pipeline.py --ignore=tests/te
 
 ### Prochaines étapes identifiées
 
+| # | Catégorie | Description | Priorité | Statut |
+|---|-----------|-------------|----------|--------|
+| 1 | Bug | **Reranking parsing validation en prod** — Tester sur le corpus théologie morale que le reranking améliore effectivement les métriques | Moyenne | |
+| 2 | Infra | **CI/CD : ajouter E2E** — Les tests E2E et benchmark ne sont pas dans le workflow CI (besoin d'Ollama + données) | Basse | |
+| 3 | Infra | **Docker : test de build** — Vérifier que `docker build` fonctionne et que l'app se lance dans le container | Moyenne | |
+| 4 | Architecture | **Refactoring stage GraphRAG** — Le bloc GraphRAG (~290 lignes) dans l'orchestrateur pourrait être extrait, mais le flux checkpoint/resume est complexe | Basse | |
+| 5 | Tests | **Tests unitaires chunking** — `chunk_text_data` et `chunk_table_data` pas testés unitairement | Basse | |
+
+---
+
+## Session 19 — 29 janvier 2026
+
+### Résumé
+
+Fix du conflit Qdrant entre tests E2E et benchmark, mise en place de la CI verte (lint + tests), et formatage du codebase avec black.
+
+### Tâches complétées
+
+| Tâche | Fichier(s) | Description |
+|-------|-----------|-------------|
+| **Fix Qdrant lock E2E↔benchmark** | `tests/test_00_e2e_pipeline.py` | Les full pipeline tests créaient des CogniDoc instances sans fermer leur retriever Qdrant → lock persistant empêchant les benchmark tests. Ajout `doc._retriever.close()` dans les blocs `finally`. |
+| **Lazy import torch/PIL** | `src/cognidoc/helpers.py` | `torch` et `PIL` importés au top-level bloquaient l'import du module sans les extras `yolo`/`conversion`. Déplacés en imports locaux dans les fonctions qui les utilisent. |
+| **Fix np.ndarray sans numpy** | `src/cognidoc/extract_objects_from_image.py` | `np = None` quand numpy absent → `np.ndarray` dans les type hints crashait à la définition de classe. Fix : `from __future__ import annotations` pour rendre les annotations lazy. |
+| **Fix dependency-groups dev** | `pyproject.toml` | `[dependency-groups] dev` ne contenait que `pytest`. Synchronisé avec `[project.optional-dependencies] dev` : ajout `pytest-asyncio`, `black`, `pylint`, `mypy`. |
+| **CI extras complets** | `.github/workflows/ci.yml` | Ajout `--extra ui` pour les tests dépendant de gradio. Install : `--group dev --extra cloud --extra conversion --extra ollama --extra ui`. |
+| **Formatage black** | 39 fichiers `src/cognidoc/` | Première exécution de `black --line-length 100` sur tout le codebase. 39 fichiers reformatés. |
+
+### Modifications clés
+
+#### 1. Fix Qdrant lock E2E↔benchmark (`test_00_e2e_pipeline.py`)
+
+Les tests `test_full_pipeline_ingestion` et `test_full_pipeline_with_graphrag` créaient leur propre `CogniDoc` instance (via `release_qdrant_lock` → ferme la session → crée une nouvelle instance). Après `doc.query()`, le retriever (et son QdrantClient) restait ouvert. Les benchmark tests échouaient ensuite avec `Storage folder is already accessed by another instance of Qdrant client`.
+
+**Fix :** Fermeture explicite du retriever dans le `finally` block :
+```python
+finally:
+    if doc._retriever is not None:
+        doc._retriever.close()
+        doc._retriever = None
+```
+
+**Résultat :** 422 passed, 1 skipped, 0 failures (avec `--run-slow`).
+
+#### 2. CI verte — 3 problèmes corrigés
+
+| Problème | Cause | Fix |
+|----------|-------|-----|
+| `black` not found | `[dependency-groups] dev` ne contenait que pytest | Ajout black, pylint, mypy, pytest-asyncio |
+| `import torch` crash | `helpers.py` importait torch au top-level | Lazy import dans `clear_pytorch_cache()` |
+| `np.ndarray` crash | `np = None` quand numpy absent, type hints évalués | `from __future__ import annotations` |
+| `import gradio` crash | `test_e2e_language_and_count.py` → `cognidoc_app` → gradio | Ajout `--extra ui` au workflow |
+| 39 fichiers non formatés | `black --check` échouait | Exécution de `black` sur tout `src/cognidoc/` |
+
+#### 3. Vérification CI
+
+```
+✓ lint in 1m0s
+  ✓ Format check (black)
+  ✓ Lint (pylint)
+✓ test in 25s
+  ✓ Run tests (404 passed)
+```
+
+### Commits session 19
+
+| Hash | Description |
+|------|-------------|
+| `d927814` | Fix Qdrant lock conflict between E2E and benchmark tests |
+| `b6212d3` | Fix CI: lazy-import torch/PIL and install extras in workflow |
+| `503b261` | Fix CI: add dev tools to dependency-groups and install ui extra |
+| `db39ffd` | Format codebase with black and fix CI compatibility |
+
+### Tests vérifiés
+
+```bash
+# Tous les tests (avec E2E + benchmarks)
+uv run pytest tests/ -v --run-slow
+# 422 passed, 1 skipped, 0 failures in 6m45s
+
+# Tests CI (sans E2E ni benchmarks)
+uv run pytest tests/ -v --ignore=tests/test_00_e2e_pipeline.py --ignore=tests/test_benchmark.py
+# 403 passed, 1 skipped in 5.84s
+
+# CI GitHub Actions
+# ✓ lint (black + pylint) — 1m0s
+# ✓ test (404 passed) — 25s
+```
+
+| Métrique | Avant | Après |
+|----------|-------|-------|
+| Tests total (--run-slow) | 418 passed, 4 failed | 422 passed, 0 failed |
+| CI lint | ✗ Failed | ✓ Passed |
+| CI test | ✗ Failed | ✓ Passed |
+| Fichiers formatés black | 4/43 | 43/43 |
+
+### État final
+
+- **4 commits** poussés sur origin/master
+- **CI verte** : lint + tests passent sur GitHub Actions
+- **Qdrant lock** : résolu — tous les tests passent ensemble (E2E + benchmarks + unitaires)
+- **Codebase formaté** : 39 fichiers reformatés avec black
+
+### Prochaines étapes identifiées
+
 | # | Catégorie | Description | Priorité |
 |---|-----------|-------------|----------|
-| 1 | Bug | **Reranking parsing validation en prod** — Tester sur le corpus théologie morale que le reranking améliore effectivement les métriques | Moyenne |
-| 2 | Infra | **CI/CD : ajouter E2E** — Les tests E2E et benchmark ne sont pas dans le workflow CI (besoin d'Ollama + données) | Basse |
-| 3 | Infra | **Docker : test de build** — Vérifier que `docker build` fonctionne et que l'app se lance dans le container | Moyenne |
-| 4 | Architecture | **Refactoring stage GraphRAG** — Le bloc GraphRAG (~290 lignes) dans l'orchestrateur pourrait être extrait, mais le flux checkpoint/resume est complexe | Basse |
-| 5 | Tests | **Tests unitaires chunking** — `chunk_text_data` et `chunk_table_data` pas testés unitairement | Basse |
+| 1 | Bug | **Reranking parsing validation en prod** — Tester sur le corpus théologie morale | Moyenne |
+| 2 | Infra | **Docker : test de build** — Vérifier que `docker build` fonctionne | Moyenne |
+| 3 | Architecture | **Refactoring stage GraphRAG** — Extraire le bloc GraphRAG (~290 lignes) | Basse |
+| 4 | Tests | **Tests unitaires chunking** — `chunk_text_data` et `chunk_table_data` | Basse |
+| 5 | Infra | **CI/CD : ajouter E2E** — Tests E2E dans le workflow (besoin d'Ollama + données) | Basse |
