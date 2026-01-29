@@ -2004,7 +2004,7 @@ uv run pytest tests/ -v --ignore=tests/test_00_e2e_pipeline.py --ignore=tests/te
 
 | # | Catégorie | Description | Priorité | Statut |
 |---|-----------|-------------|----------|--------|
-| 1 | Bug | **Reranking parsing validation en prod** — Tester sur le corpus théologie morale que le reranking améliore effectivement les métriques | Moyenne | |
+| 1 | Qualité | **Reranking validation métriques** — Vérifier que le reranking améliore les métriques de précision/rappel sur les benchmarks (parser testé par 12 tests unitaires dans `test_optimizations.py`) | Moyenne | |
 | 2 | Infra | **CI/CD : ajouter E2E** — Les tests E2E et benchmark ne sont pas dans le workflow CI (besoin d'Ollama + données) | Basse | |
 | 3 | Infra | **Docker : test de build** — Vérifier que `docker build` fonctionne et que l'app se lance dans le container | Moyenne | |
 | 4 | Architecture | **Refactoring stage GraphRAG** — Le bloc GraphRAG (~290 lignes) dans l'orchestrateur pourrait être extrait, mais le flux checkpoint/resume est complexe | Basse | |
@@ -2108,7 +2108,7 @@ uv run pytest tests/ -v --ignore=tests/test_00_e2e_pipeline.py --ignore=tests/te
 
 | # | Catégorie | Description | Priorité |
 |---|-----------|-------------|----------|
-| 1 | Bug | **Reranking parsing validation en prod** — Tester sur le corpus théologie morale | Moyenne |
+| 1 | Qualité | **Reranking validation métriques** — Vérifier via benchmarks que le reranking améliore précision/rappel | Moyenne |
 | 2 | Infra | **Docker : test de build** — Vérifier que `docker build` fonctionne | Moyenne |
 | 3 | Architecture | **Refactoring stage GraphRAG** — Extraire le bloc GraphRAG (~290 lignes) | Basse |
 | 4 | Tests | **Tests unitaires chunking** — `chunk_text_data` et `chunk_table_data` | Basse |
