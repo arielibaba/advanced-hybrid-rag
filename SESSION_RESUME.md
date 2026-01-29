@@ -2004,7 +2004,7 @@ uv run pytest tests/ -v --ignore=tests/test_00_e2e_pipeline.py --ignore=tests/te
 
 | # | Catégorie | Description | Priorité | Statut |
 |---|-----------|-------------|----------|--------|
-| 1 | Qualité | **Reranking validation métriques** — Vérifier que le reranking améliore les métriques de précision/rappel sur les benchmarks (parser testé par 12 tests unitaires dans `test_optimizations.py`) | Moyenne | |
+| 1 | Qualité | **Reranking validation métriques** — Vérifier que le reranking améliore les métriques de précision/rappel sur les benchmarks (parser testé par 12 tests unitaires dans `test_optimizations.py`) | Moyenne | ✅ Session 20 |
 | 2 | Infra | **CI/CD : ajouter E2E** — Les tests E2E et benchmark ne sont pas dans le workflow CI (besoin d'Ollama + données) | Basse | |
 | 3 | Infra | **Docker : test de build** — Vérifier que `docker build` fonctionne et que l'app se lance dans le container | Moyenne | |
 | 4 | Architecture | **Refactoring stage GraphRAG** — Le bloc GraphRAG (~290 lignes) dans l'orchestrateur pourrait être extrait, mais le flux checkpoint/resume est complexe | Basse | |
@@ -2165,12 +2165,60 @@ uv run pytest tests/ -v --run-slow -x
 - **SESSION_RESUME.md** nettoyé de toute dépendance implicite à des données externes
 - **Cohérence CLAUDE.md ↔ SESSION_RESUME.md** vérifiée — aucune divergence sur les données de test
 
+### Tâche 1 — Reranking validation métriques
+
+#### Implémentation (`tests/test_benchmark.py`)
+
+Ajout du paramètre `use_reranking` aux méthodes `retrieve_vector_only()`, `retrieve_hybrid()` et `run_benchmark()`. Nouvelle méthode `run_reranking_comparison()` qui exécute le benchmark sans puis avec reranking sur un mode donné et affiche un résumé comparatif.
+
+Nouvelle classe `TestBenchmarkRerankingComparison` avec 2 tests :
+- `test_reranking_comparison_vector` — compare vector-only avec/sans reranking (10 queries)
+- `test_reranking_comparison_hybrid` — compare hybrid avec/sans reranking (5 queries)
+
+#### Résultats benchmark
+
+**Vector-only — Reranking Impact :**
+
+| Métrique | Sans reranking | Avec reranking | Delta |
+|----------|---------------|----------------|-------|
+| Latency | 4,450 ms | 7,375 ms | +65.7% |
+| Precision | 100% | 100% | 0% |
+| Keyword Hit Rate | 100% | 97.5% | -2.5% |
+| MRR | 1.000 | 1.000 | 0% |
+
+**Hybrid — Reranking Impact :**
+
+| Métrique | Sans reranking | Avec reranking | Delta |
+|----------|---------------|----------------|-------|
+| Latency | 9,994 ms | 8,609 ms | -13.9% |
+| Precision | 71.7% | 63.3% | -11.6% |
+| Keyword Hit Rate | 100% | 100% | 0% |
+| MRR | 1.000 | 1.000 | 0% |
+
+**Analyse :** Sur le petit corpus de test (2 documents, ~5 chunks), le reranking n'apporte pas d'amélioration mesurable car tous les résultats sont déjà pertinents. Le reranking LLM ajoute un overhead de latence (+65.7% en vector-only). Quelques warnings "Reranking parsing failed" indiquent que le LLM retourne parfois un format non parsable → fallback sur l'ordre original. Pour observer un impact significatif, il faudrait un corpus plus large avec des documents non-pertinents à filtrer.
+
+#### Commits
+
+| Hash | Message |
+|------|---------|
+| `14061d7` | Add reranking comparison benchmarks to validate precision/recall impact |
+
+#### Tests
+
+```bash
+uv run pytest tests/test_benchmark.py -v --run-slow
+# 12 passed in 468.70s (7m48s) — +2 nouveaux tests de comparaison reranking
+
+uv run pytest tests/ -v --ignore=tests/test_00_e2e_pipeline.py --ignore=tests/test_benchmark.py
+# 403 passed, 1 skipped in 6.18s
+```
+
 ### Prochaines étapes identifiées
 
-| # | Catégorie | Description | Priorité |
-|---|-----------|-------------|----------|
-| 1 | Qualité | **Reranking validation métriques** — Vérifier via benchmarks que le reranking améliore précision/rappel | Moyenne |
-| 2 | Infra | **Docker : test de build** — Vérifier que `docker build` fonctionne | Moyenne |
-| 3 | Architecture | **Refactoring stage GraphRAG** — Extraire le bloc GraphRAG (~290 lignes) | Basse |
-| 4 | Tests | **Tests unitaires chunking** — `chunk_text_data` et `chunk_table_data` | Basse |
-| 5 | Infra | **CI/CD : ajouter E2E** — Tests E2E dans le workflow (besoin d'Ollama + données) | Basse |
+| # | Catégorie | Description | Priorité | Statut |
+|---|-----------|-------------|----------|--------|
+| 1 | Qualité | **Reranking validation métriques** — Benchmarks comparatifs avec/sans reranking | Moyenne | ✅ |
+| 2 | Infra | **Docker : test de build** — Vérifier que `docker build` fonctionne | Moyenne | |
+| 3 | Architecture | **Refactoring stage GraphRAG** — Extraire le bloc GraphRAG (~290 lignes) | Basse | |
+| 4 | Tests | **Tests unitaires chunking** — `chunk_text_data` et `chunk_table_data` | Basse | |
+| 5 | Infra | **CI/CD : ajouter E2E** — Tests E2E dans le workflow (besoin d'Ollama + données) | Basse | |
