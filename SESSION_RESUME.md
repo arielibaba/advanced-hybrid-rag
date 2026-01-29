@@ -2278,6 +2278,8 @@ Bloc inline de 308 lignes extrait en 4 fonctions :
 | `900a86b` | Add unit tests for chunk_text_data and chunk_table_data (29 tests) |
 | `bf9d193` | Improve CI: Python matrix, mypy, Docker build, CI badge |
 | `58bdda5` | Fix black formatting on run_ingestion_pipeline.py |
+| `906b69d` | Update SESSION_RESUME.md with CI fix and GitHub Actions results |
+| `cd58118` | Update CLAUDE.md with test_chunking and benchmark test counts |
 
 ### Tests
 
@@ -2303,3 +2305,16 @@ uv run pytest tests/ -v
 - Docker build fonctionnel
 - CI/CD avec matrice Python 3.10-3.12 — tous les jobs verts
 - Pipeline GraphRAG refactoré en fonctions modulaires
+- `IMPLEMENTATION_PLAN.md` supprimé (remplacé par `CLAUDE.md`)
+- Modèle par défaut corrigé : `gemini-3-flash-preview` partout
+
+### Prochaines étapes identifiées
+
+| # | Catégorie | Description | Priorité |
+|---|-----------|-------------|----------|
+| 1 | Tests | **Couverture de code** — ajouter pytest-cov au CI, identifier les modules sous-testés | Moyenne |
+| 2 | Qualité | **Mypy bloquant** — corriger les erreurs de typage et retirer `\|\| true` du CI | Moyenne |
+| 3 | Infra | **Release automation** — workflow publication PyPI sur tag + CHANGELOG | Basse |
+| 4 | Fonctionnel | **Cross-encoder reranking** — activer/tester le reranker Qwen3 vs LLM scoring | Basse |
+| 5 | Fonctionnel | **Gestion fichiers supprimés** — flag `--prune` pour nettoyer documents retirés | Basse |
+| 6 | Perf | **Benchmark corpus réel** — valider métriques reranking sur corpus plus large | Basse |
