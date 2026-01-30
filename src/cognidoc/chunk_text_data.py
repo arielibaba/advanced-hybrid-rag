@@ -9,7 +9,7 @@ import re
 import numpy as np
 from pathlib import Path
 from collections import deque
-from typing import List
+from typing import List, Optional
 
 import ollama
 
@@ -382,7 +382,7 @@ def chunk_text_data(
     breakpoint_threshold_amount: float,
     sentence_split_regex: str,
     verbose: bool,
-    file_filter: list = None,
+    file_filter: Optional[list] = None,
 ):
     """
     Performs txt documents chunking using semantic chunking.

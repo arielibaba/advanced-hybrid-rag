@@ -50,6 +50,7 @@ class PerformanceMetrics:
     """
 
     _instance: Optional["PerformanceMetrics"] = None
+    _initialized: bool = False
 
     def __new__(cls, db_path: Optional[str] = None):
         """Singleton pattern."""
@@ -71,7 +72,7 @@ class PerformanceMetrics:
         if db_path is None:
             from ..constants import METRICS_DB
 
-            db_path = METRICS_DB
+            db_path = str(METRICS_DB)
 
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

@@ -106,15 +106,15 @@ def build_indexes(recreate: bool = False):
     # Load embeddings and documents
     logger.info("Loading embeddings and documents...")
     embeddings, child_docs, parent_docs = load_embeddings_with_documents(
-        embeddings_dir=EMBEDDINGS_DIR,
-        chunks_dir=CHUNKS_DIR,
-        docs_dir=PROCESSED_DIR,
+        embeddings_dir=str(EMBEDDINGS_DIR),
+        chunks_dir=str(CHUNKS_DIR),
+        docs_dir=str(PROCESSED_DIR),
     )
 
     # Create child documents vector index
     logger.info("Creating child documents vector index...")
     child_index = VectorIndex.create(
-        qdrant_path=VECTOR_STORE_DIR,
+        qdrant_path=str(VECTOR_STORE_DIR),
         collection_name="child_documents",
         embed_model=EMBED_MODEL,
         recreate=recreate,

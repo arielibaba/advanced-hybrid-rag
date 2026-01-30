@@ -38,6 +38,7 @@ class PersistentToolCache:
     DEFAULT_TTL = 120  # 2 minutes default
 
     _instance: Optional["PersistentToolCache"] = None
+    _initialized: bool = False
 
     def __new__(cls, db_path: Optional[str] = None):
         """Singleton pattern - ensure only one cache instance."""
@@ -59,7 +60,7 @@ class PersistentToolCache:
         if db_path is None:
             from ..constants import TOOL_CACHE_DB
 
-            db_path = TOOL_CACHE_DB
+            db_path = str(TOOL_CACHE_DB)
 
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

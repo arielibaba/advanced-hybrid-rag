@@ -148,9 +148,12 @@ all = [
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "pytest-cov>=6.0",
     "black>=24.0",
     "pylint>=3.0",
     "mypy>=1.0",
+    "types-PyYAML>=6.0",
+    "types-tqdm>=4.0",
 ]
 
 [project.scripts]
@@ -184,17 +187,61 @@ disable = [
     "R0903",
 ]
 
+[tool.coverage.run]
+source = ["src/cognidoc"]
+omit = [
+    "src/cognidoc/setup.py",
+    "src/cognidoc/cognidoc_app.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+
+[[tool.mypy.overrides]]
+module = [
+    # UI / interactive (optional deps)
+    "cognidoc.setup",
+    "cognidoc.cognidoc_app",
+    # Vision / YOLO (optional deps, heavy typing)
+    "cognidoc.convert_to_pdf",
+    "cognidoc.extract_objects_from_image",
+    "cognidoc.create_image_description",
+    "cognidoc.parse_image_with_text",
+    "cognidoc.parse_image_with_table",
+    # Pipeline orchestration (Path/str reassignment pattern)
+    "cognidoc.constants",
+    "cognidoc.run_ingestion_pipeline",
+    # Complex modules (gradual fix)
+    "cognidoc.knowledge_graph",
+    "cognidoc.hybrid_retriever",
+    "cognidoc.extract_entities",
+    "cognidoc.schema_wizard",
+    "cognidoc.agent_tools",
+    "cognidoc.api",
+    "cognidoc.query_orchestrator",
+    "cognidoc.graph_retrieval",
+    "cognidoc.entity_resolution",
+    "cognidoc.utils.rag_utils",
+    "cognidoc.utils.advanced_rag",
+]
+ignore_errors = true
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=0.21",
+    "pytest-cov>=6.0",
     "black>=24.0",
     "pylint>=3.0",
     "mypy>=1.0",
+    "types-PyYAML>=6.0",
+    "types-tqdm>=4.0",
 ]

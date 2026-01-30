@@ -19,6 +19,10 @@ models/
 # Logs
 *.log
 
+# Coverage reports
+.coverage
+htmlcov/
+
 # Generated documentation
 .docai/
 .DS_Store

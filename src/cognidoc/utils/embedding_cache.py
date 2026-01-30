@@ -98,7 +98,8 @@ class EmbeddingCache:
 
         if row:
             logger.debug(f"Cache hit for hash {content_hash[:16]}...")
-            return json.loads(row[0])
+            result: list[float] = json.loads(row[0])
+            return result
 
         logger.debug(f"Cache miss for hash {content_hash[:16]}...")
         return None
@@ -236,7 +237,7 @@ def get_embedding_cache(cache_dir: Optional[str] = None) -> EmbeddingCache:
         if cache_dir is None:
             from ..constants import CACHE_DIR
 
-            cache_dir = CACHE_DIR
+            cache_dir = str(CACHE_DIR)
 
         _cache_instance = EmbeddingCache(cache_dir)
         logger.info(f"Initialized embedding cache at {cache_dir}")

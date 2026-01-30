@@ -133,7 +133,8 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
 
     def embed_single(self, text: str) -> List[float]:
         response = self.client.embeddings(model=self.config.model, prompt=text)
-        return response["embedding"]
+        result: List[float] = response["embedding"]
+        return result
 
     def embed_query(self, query: str, task: Optional[str] = None) -> List[float]:
         """
@@ -204,7 +205,7 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
                 results[idx] = response.json()["embedding"]
 
         await asyncio.gather(*[embed_one(i, t) for i, t in enumerate(texts)])
-        return results
+        return [r for r in results if r is not None]  # type: ignore[misc]
 
 
 class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
@@ -234,7 +235,8 @@ class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
             model=self.config.model,
             input=text,
         )
-        return response.data[0].embedding
+        result: List[float] = response.data[0].embedding
+        return result
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         """Embed multiple texts (OpenAI supports batching)."""
@@ -276,11 +278,12 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
             )
 
     def embed_single(self, text: str) -> List[float]:
-        result = self.client.models.embed_content(
+        response = self.client.models.embed_content(
             model=self.config.model,
             contents=text,
         )
-        return result.embeddings[0].values
+        values: List[float] = response.embeddings[0].values
+        return values
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         """Embed multiple texts."""
@@ -313,7 +316,7 @@ def create_embedding_provider(config: EmbeddingConfig) -> BaseEmbeddingProvider:
         raise ValueError(f"Unknown embedding provider: {config.provider}")
 
     logger.info(f"Creating {config.provider.value} embedding provider with model {config.model}")
-    return provider_class(config)
+    return provider_class(config)  # type: ignore[abstract]
 
 
 def get_default_embedding_provider() -> BaseEmbeddingProvider:
@@ -399,7 +402,7 @@ def get_embedding_provider() -> BaseEmbeddingProvider:
     return _embedding_provider
 
 
-def set_embedding_provider(provider: str, model: str = None) -> BaseEmbeddingProvider:
+def set_embedding_provider(provider: str, model: Optional[str] = None) -> BaseEmbeddingProvider:
     """Set the global embedding provider."""
     global _embedding_provider
 

@@ -87,7 +87,7 @@ class PipelineTimer:
         logger.info(f"Starting stage: {name}")
         return self
 
-    def end(self) -> dict[str, float]:
+    def end(self) -> dict[str, object]:
         """End the pipeline and return timing summary."""
         now = time.perf_counter()
 

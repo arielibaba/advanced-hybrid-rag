@@ -113,7 +113,7 @@ def ask_LLM_with_JSON(
         {"role": "user", "content": prompt},
     ]
     response = ollama_client.chat(model=model, messages=messages, options=model_options)
-    return response["message"]["content"]
+    return str(response["message"]["content"])
 
 
 def ask_llm_json_unified(prompt: str, temperature: float = 0.7) -> str:
@@ -284,7 +284,7 @@ def retrieve_from_keyword_index(index: KeywordIndex, key: str, value: Any) -> Li
     return index.search_by_metadata(key, value)
 
 
-def limit_chat_history(history: List[dict], max_tokens: int = None) -> List[dict]:
+def limit_chat_history(history: List[dict], max_tokens: Optional[int] = None) -> List[dict]:
     """Truncates chat history to fit within a maximum token limit.
 
     Uses the current LLM's context_window to calculate the limit dynamically.
@@ -556,9 +556,9 @@ def parallel_rewrite_and_classify(
 
         # Build routing decision
         weight_cfg = WEIGHT_CONFIG.get(query_type, WEIGHT_CONFIG[QueryType.UNKNOWN])
-        vector_weight = weight_cfg["vector"]
-        graph_weight = weight_cfg["graph"]
-        mode = weight_cfg["mode"]
+        vector_weight = float(str(weight_cfg["vector"]))
+        graph_weight = float(str(weight_cfg["graph"]))
+        mode: RetrievalMode = weight_cfg["mode"]  # type: ignore[assignment]
 
         # Never skip vector completely - we need documents for references
         # Only skip if weight is very low AND it's not needed for context

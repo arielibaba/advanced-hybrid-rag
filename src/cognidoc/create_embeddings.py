@@ -129,7 +129,8 @@ def get_embeddings(text: str, embed_model: str, use_cache: bool = True) -> List[
     if use_cache:
         cache.set(text, embed_vector, embed_model)
 
-    return embed_vector
+    result: list[float] = embed_vector
+    return result
 
 
 def collect_chunks_to_embed(
@@ -139,7 +140,7 @@ def collect_chunks_to_embed(
     use_cache: bool,
     force_reembed: bool,
     cache,
-    file_filter: list = None,
+    file_filter: Optional[list] = None,
 ) -> Tuple[List[ChunkToEmbed], Dict[str, int]]:
     """
     Collect all chunks that need to be embedded.
@@ -303,7 +304,7 @@ def create_embeddings(
     force_reembed: bool = False,
     batch_size: int = DEFAULT_BATCH_SIZE,
     max_concurrent: int = MAX_CONCURRENT_REQUESTS,
-    file_filter: list = None,
+    file_filter: Optional[list] = None,
 ) -> Dict[str, int]:
     """
     Generate embeddings for all chunk files in chunks_dir.

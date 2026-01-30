@@ -243,7 +243,7 @@ class GeminiProvider(BaseLLMProvider):
             gemini_messages, system_instruction = self._convert_messages(messages)
 
             # Build generation config
-            config_kwargs = {
+            config_kwargs: dict[str, object] = {
                 "temperature": self.config.temperature,
                 "top_p": self.config.top_p,
             }
@@ -286,7 +286,7 @@ class GeminiProvider(BaseLLMProvider):
     def stream_chat(self, messages: list[Message]) -> Generator[str, None, None]:
         gemini_messages, system_instruction = self._convert_messages(messages)
 
-        config_kwargs = {
+        config_kwargs: dict[str, object] = {
             "temperature": self.config.temperature,
             "top_p": self.config.top_p,
         }
@@ -325,7 +325,7 @@ class GeminiProvider(BaseLLMProvider):
             if mime_type is None:
                 mime_type = "image/jpeg"
 
-            config_kwargs = {
+            config_kwargs: dict[str, object] = {
                 "temperature": self.config.temperature,
                 "top_p": self.config.top_p,
             }
@@ -350,7 +350,7 @@ class GeminiProvider(BaseLLMProvider):
                 contents=contents,
                 config=generation_config,
             )
-            return response.text
+            return str(response.text)
 
     async def avision(
         self, image_path: str, prompt: str, system_prompt: Optional[str] = None
@@ -371,11 +371,11 @@ class OllamaProvider(BaseLLMProvider):
         )
         self.ollama = ollama
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, object]]:
         """Convert messages to Ollama format."""
-        ollama_messages = []
+        ollama_messages: list[dict[str, object]] = []
         for msg in messages:
-            m = {"role": msg.role, "content": msg.content}
+            m: dict[str, object] = {"role": msg.role, "content": msg.content}
             if msg.images:
                 m["images"] = msg.images
             ollama_messages.append(m)
@@ -384,7 +384,7 @@ class OllamaProvider(BaseLLMProvider):
     def chat(self, messages: list[Message], json_mode: bool = False) -> LLMResponse:
         with timer(f"Ollama chat ({self.config.model})"):
             ollama_messages = self._convert_messages(messages)
-            kwargs = {
+            kwargs: dict[str, object] = {
                 "model": self.config.model,
                 "messages": ollama_messages,
                 "options": {
@@ -423,7 +423,7 @@ class OllamaProvider(BaseLLMProvider):
 
     def vision(self, image_path: str, prompt: str, system_prompt: Optional[str] = None) -> str:
         with timer(f"Ollama vision ({self.config.model})"):
-            messages = []
+            messages: list[dict[str, object]] = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append(
@@ -442,7 +442,7 @@ class OllamaProvider(BaseLLMProvider):
                     "top_p": self.config.top_p,
                 },
             )
-            return response["message"]["content"]
+            return str(response["message"]["content"])
 
     async def avision(
         self, image_path: str, prompt: str, system_prompt: Optional[str] = None
@@ -467,12 +467,12 @@ class OpenAIProvider(BaseLLMProvider):
             timeout=config.timeout,
         )
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, object]]:
         """Convert messages to OpenAI format."""
-        openai_messages = []
+        openai_messages: list[dict[str, object]] = []
         for msg in messages:
             if msg.images:
-                content = [{"type": "text", "text": msg.content}]
+                content: list[dict[str, object]] = [{"type": "text", "text": msg.content}]
                 for img_path in msg.images:
                     base64_img = self._encode_image_base64(img_path)
                     mime_type = self._get_image_mime_type(img_path)
@@ -490,7 +490,7 @@ class OpenAIProvider(BaseLLMProvider):
     def chat(self, messages: list[Message], json_mode: bool = False) -> LLMResponse:
         with timer(f"OpenAI chat ({self.config.model})"):
             openai_messages = self._convert_messages(messages)
-            kwargs = {
+            kwargs: dict[str, object] = {
                 "model": self.config.model,
                 "messages": openai_messages,
                 "temperature": self.config.temperature,
@@ -658,15 +658,15 @@ class AnthropicProvider(BaseLLMProvider):
 # Factory function
 def create_llm_provider(config: LLMConfig) -> BaseLLMProvider:
     """Create an LLM provider based on configuration."""
-    providers = {
-        LLMProvider.GEMINI: GeminiProvider,
-        LLMProvider.OLLAMA: OllamaProvider,
-        LLMProvider.OPENAI: OpenAIProvider,
-        LLMProvider.ANTHROPIC: AnthropicProvider,
+    providers: dict[LLMProvider, type[BaseLLMProvider]] = {
+        LLMProvider.GEMINI: GeminiProvider,  # type: ignore[dict-item]
+        LLMProvider.OLLAMA: OllamaProvider,  # type: ignore[dict-item]
+        LLMProvider.OPENAI: OpenAIProvider,  # type: ignore[dict-item]
+        LLMProvider.ANTHROPIC: AnthropicProvider,  # type: ignore[dict-item]
     }
 
     provider_class = providers.get(config.provider)
-    if not provider_class:
+    if provider_class is None:
         raise ValueError(f"Unknown provider: {config.provider}")
 
     logger.info(f"Creating {config.provider.value} provider with model {config.model}")
@@ -741,8 +741,8 @@ def get_default_generation_provider() -> BaseLLMProvider:
     config = LLMConfig.from_model(
         model=model,
         provider=provider,
-        temperature=float(os.getenv("LLM_TEMPERATURE")) if os.getenv("LLM_TEMPERATURE") else None,
-        top_p=float(os.getenv("LLM_TOP_P")) if os.getenv("LLM_TOP_P") else None,
+        temperature=float(env_t) if (env_t := os.getenv("LLM_TEMPERATURE")) else None,
+        top_p=float(env_p) if (env_p := os.getenv("LLM_TOP_P")) else None,
     )
     return create_llm_provider(config)
 
@@ -758,7 +758,7 @@ def get_default_vision_provider() -> BaseLLMProvider:
         model=model,
         provider=provider,
         temperature=float(os.getenv("VISION_TEMPERATURE", "0.2")),
-        top_p=float(os.getenv("VISION_TOP_P")) if os.getenv("VISION_TOP_P") else None,
+        top_p=float(env_vp) if (env_vp := os.getenv("VISION_TOP_P")) else None,
     )
     return create_llm_provider(config)
 

@@ -317,7 +317,7 @@ def evaluate_complexity(
     factors["entity_count"] = entity_score
 
     # 3. Sub-question count factor
-    subq_count = count_subquestions(rewritten_query)
+    subq_count = count_subquestions(rewritten_query or query)
     if subq_count >= MIN_SUBQUESTIONS_FOR_COMPLEX:
         subq_score = 1.0
         reasoning_parts.append(f"{subq_count} sub-questions identified")

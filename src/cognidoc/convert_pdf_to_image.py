@@ -74,7 +74,7 @@ def _get_pdf_page_count(pdf_path: Path) -> int:
 
     try:
         info = pdfinfo_from_path(str(pdf_path))
-        return info.get("Pages", 0)
+        return int(info.get("Pages", 0))
     except Exception:
         # Fallback: try loading first page to check if PDF is valid
         return -1  # Unknown, will process page by page until error

@@ -49,7 +49,7 @@ def reset_llm_client() -> None:
     logger.info("LLM client reset")
 
 
-def set_llm_provider(provider: str, model: str = None) -> BaseLLMProvider:
+def set_llm_provider(provider: str, model: Optional[str] = None) -> BaseLLMProvider:
     """
     Set a specific LLM provider with auto-loaded model specs.
 
@@ -289,11 +289,12 @@ async def run_parallel_llm_calls(
 
     output = {}
     for result in results:
-        if isinstance(result, Exception):
+        if isinstance(result, BaseException):
             logger.error(f"Parallel LLM call failed: {result}")
             continue
-        name, response = result
-        output[name] = response
+        if isinstance(result, tuple):
+            name, response = result
+            output[name] = response
 
     return output
 

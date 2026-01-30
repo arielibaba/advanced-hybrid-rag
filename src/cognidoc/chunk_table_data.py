@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, Any, TYPE_CHECKING
 
-
-import ollama
+if TYPE_CHECKING:
+    import ollama
 
 from .helpers import ask_LLM_with_JSON, ask_llm_json_unified, recover_json, get_token_count
 
@@ -96,10 +98,10 @@ def chunk_markdown_table_with_overlap(md_table, cols=None, n_tokens=512, overlap
 def chunk_markdown_table(
     prompt: str,
     md_table: str,
-    cols: List[str],
+    cols: Optional[List[str]],
     n_tokens: int,
     overlap: int,
-    ollama_client: Optional[ollama.Client] = None,
+    ollama_client: Any = None,
     model: str = "",
     model_options: Optional[Dict] = None,
     use_unified_llm: bool = False,
@@ -156,12 +158,12 @@ def chunk_table_data(
     n_tokens: int,
     overlap: int,
     tables_chunks_dir: str,
-    ollama_client: Optional[ollama.Client] = None,
+    ollama_client: Any = None,
     model: str = "",
     model_options: Optional[Dict] = None,
     use_unified_llm: bool = True,
     temperature: float = 0.7,
-    file_filter: list = None,
+    file_filter: Optional[list] = None,
 ) -> None:
     """
     Opens markdown tables and split them into chunks, then stores the resulting tables chunks as well as summaries in dedicated folders.
