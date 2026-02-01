@@ -304,51 +304,34 @@ def evaluate_complexity(
             query_type_score = 0.0
     factors["query_type"] = query_type_score
 
-    # 2. Entity count factor
+    # 2. Entity count factor (continuous: 0 → 0.0, 2 → 0.5, 4+ → 1.0)
     entity_count = len(routing.entities_detected) if routing else 0
-    if entity_count >= MIN_ENTITIES_FOR_COMPLEX:
-        entity_score = 1.0
-        reasoning_parts.append(f"{entity_count} entities detected (multi-entity query)")
-    elif entity_count >= 2:
-        entity_score = 0.5
-        reasoning_parts.append(f"{entity_count} entities detected")
-    else:
-        entity_score = 0.0
+    entity_score = min(entity_count / 4.0, 1.0)
+    if entity_count >= 1:
+        reasoning_parts.append(f"{entity_count} entities detected (score={entity_score:.2f})")
     factors["entity_count"] = entity_score
 
-    # 3. Sub-question count factor
+    # 3. Sub-question count factor (continuous: 1 → 0.0, 2 → 0.33, 4+ → 1.0)
     subq_count = count_subquestions(rewritten_query or query)
-    if subq_count >= MIN_SUBQUESTIONS_FOR_COMPLEX:
-        subq_score = 1.0
-        reasoning_parts.append(f"{subq_count} sub-questions identified")
-    elif subq_count >= 2:
-        subq_score = 0.5
-        reasoning_parts.append(f"{subq_count} sub-questions identified")
-    else:
-        subq_score = 0.0
+    subq_score = min((subq_count - 1) / 3.0, 1.0)
+    if subq_count >= 2:
+        reasoning_parts.append(f"{subq_count} sub-questions identified (score={subq_score:.2f})")
     factors["subquestion_count"] = subq_score
 
-    # 4. Complex keywords factor
+    # 4. Complex keywords factor (continuous: 0 → 0.0, 2 → 0.5, 4+ → 1.0)
     keyword_count, matched_keywords = count_complex_keywords(query)
-    if keyword_count >= 3:
-        keyword_score = 1.0
-        reasoning_parts.append(f"Multiple complex keywords: {keyword_count} matches")
-    elif keyword_count >= 1:
-        keyword_score = 0.5
-        reasoning_parts.append(f"Complex keyword detected")
-    else:
-        keyword_score = 0.0
+    keyword_score = min(keyword_count / 4.0, 1.0)
+    if keyword_count >= 1:
+        reasoning_parts.append(f"{keyword_count} complex keywords (score={keyword_score:.2f})")
     factors["keyword_matches"] = keyword_score
 
-    # 5. Low confidence factor
+    # 5. Low confidence factor (continuous: 0.7+ → 0.0, 0.2 → 1.0)
     confidence = routing.confidence if routing else 0.5
-    if confidence < LOW_CONFIDENCE_THRESHOLD:
-        confidence_score = 1.0
-        reasoning_parts.append(f"Low routing confidence ({confidence:.2f})")
-    elif confidence < 0.6:
-        confidence_score = 0.5
-    else:
-        confidence_score = 0.0
+    confidence_score = max(0.0, min(1.0, (0.7 - confidence) / 0.5))
+    if confidence_score > 0.1:
+        reasoning_parts.append(
+            f"Low routing confidence ({confidence:.2f}, score={confidence_score:.2f})"
+        )
     factors["low_confidence"] = confidence_score
 
     # Calculate weighted score

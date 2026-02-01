@@ -68,9 +68,7 @@ class TestCountComplexKeywords:
 
     def test_french_keywords(self):
         """French complex keywords detected."""
-        count, matches = count_complex_keywords(
-            "Pourquoi et comment analyser les conséquences?"
-        )
+        count, matches = count_complex_keywords("Pourquoi et comment analyser les conséquences?")
         assert count >= 3  # pourquoi, analyser, conséquences
 
     def test_english_keywords(self):
@@ -209,7 +207,7 @@ class TestEvaluateComplexity:
             entities_detected=[],
         )
         result = evaluate_complexity("Unclear question", routing=routing)
-        assert result.factors["low_confidence"] == 1.0
+        assert result.factors["low_confidence"] == pytest.approx(1.0)
 
     def test_combined_factors_trigger_agent(self):
         """Combined factors can trigger agent path."""
@@ -245,8 +243,8 @@ class TestShouldUseAgent:
 
     def test_custom_threshold(self):
         """Custom threshold can be specified."""
-        # With very low threshold, even simple queries trigger agent
-        use_agent, _ = should_use_agent("Simple query", threshold=0.01)
+        # With very low threshold, a query with at least one keyword triggers agent
+        use_agent, _ = should_use_agent("Why is this simple?", threshold=0.01)
         assert use_agent is True
 
         # With very high threshold, nothing triggers agent
@@ -263,6 +261,88 @@ class TestShouldUseAgent:
             threshold=0.99,
         )
         assert use_agent is False
+
+
+class TestContinuousScoring:
+    """Tests for continuous (non-discrete) factor scoring."""
+
+    def test_entity_count_proportional(self):
+        """Entity count scores proportionally: 1 → 0.25, 2 → 0.5, 3 → 0.75."""
+        for count, expected in [(0, 0.0), (1, 0.25), (2, 0.5), (3, 0.75), (4, 1.0), (6, 1.0)]:
+            routing = RoutingDecision(
+                query="test",
+                query_type=QueryType.FACTUAL,
+                mode=RetrievalMode.HYBRID,
+                confidence=0.9,
+                entities_detected=[f"E{i}" for i in range(count)],
+            )
+            result = evaluate_complexity("test", routing=routing)
+            assert result.factors["entity_count"] == pytest.approx(
+                expected
+            ), f"entity_count={count}: expected {expected}, got {result.factors['entity_count']}"
+
+    def test_subquestion_count_proportional(self):
+        """Sub-question count scores proportionally: 1 → 0.0, 2 → 0.33, 4 → 1.0."""
+        cases = [
+            (1, 0.0),
+            (2, 1.0 / 3.0),
+            (3, 2.0 / 3.0),
+            (4, 1.0),
+            (5, 1.0),
+        ]
+        for count, expected in cases:
+            bullets = "\n".join(f"- Question {i}" for i in range(count))
+            result = evaluate_complexity("test", rewritten_query=bullets)
+            assert result.factors["subquestion_count"] == pytest.approx(expected, abs=0.01), (
+                f"subq_count={count}: expected {expected:.2f}, "
+                f"got {result.factors['subquestion_count']:.2f}"
+            )
+
+    def test_keyword_count_proportional(self):
+        """Keyword count scores proportionally: 1 → 0.25, 2 → 0.5, 4+ → 1.0."""
+        result = evaluate_complexity("Why is this happening?")
+        # "why" matches → 1 keyword → score = 0.25
+        assert result.factors["keyword_matches"] == pytest.approx(0.25, abs=0.01)
+
+    def test_confidence_ramp(self):
+        """Confidence scores linearly: 0.7+ → 0.0, 0.45 → 0.5, 0.2 → 1.0."""
+        for conf, expected in [(0.9, 0.0), (0.7, 0.0), (0.6, 0.2), (0.45, 0.5), (0.2, 1.0)]:
+            routing = RoutingDecision(
+                query="test",
+                query_type=QueryType.FACTUAL,
+                mode=RetrievalMode.HYBRID,
+                confidence=conf,
+                entities_detected=[],
+            )
+            result = evaluate_complexity("test", routing=routing)
+            assert result.factors["low_confidence"] == pytest.approx(expected, abs=0.01), (
+                f"confidence={conf}: expected {expected}, "
+                f"got {result.factors['low_confidence']}"
+            )
+
+    def test_continuous_scores_produce_finer_routing(self):
+        """Two queries with different entity counts get different scores."""
+        routing_2 = RoutingDecision(
+            query="What is the relation between Alpha and Beta",
+            query_type=QueryType.RELATIONAL,
+            mode=RetrievalMode.HYBRID,
+            confidence=0.7,
+            entities_detected=["Alpha", "Beta"],
+        )
+        routing_3 = RoutingDecision(
+            query="What is the relation between Alpha, Beta and Gamma",
+            query_type=QueryType.RELATIONAL,
+            mode=RetrievalMode.HYBRID,
+            confidence=0.7,
+            entities_detected=["Alpha", "Beta", "Gamma"],
+        )
+        result_2 = evaluate_complexity(
+            "What is the relation between Alpha and Beta", routing=routing_2
+        )
+        result_3 = evaluate_complexity(
+            "What is the relation between Alpha, Beta and Gamma", routing=routing_3
+        )
+        assert result_3.score > result_2.score
 
 
 class TestComplexityLevelEnum:
