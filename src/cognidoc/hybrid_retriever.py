@@ -105,9 +105,17 @@ class RetrievalCache:
         self._hits = 0
         self._misses = 0
 
+    @staticmethod
+    def _normalize_query(query: str) -> str:
+        """Normalize query for cache key consistency."""
+        q = query.lower().strip()
+        q = re.sub(r"\s+", " ", q)
+        q = re.sub(r"[?.!,;:]+$", "", q)
+        return q
+
     def _make_key(self, query: str, top_k: int, use_reranking: bool, strategy: str = "auto") -> str:
         """Create cache key from query parameters including routing strategy."""
-        key_data = f"{query}|{top_k}|{use_reranking}|{strategy}"
+        key_data = f"{self._normalize_query(query)}|{top_k}|{use_reranking}|{strategy}"
         return hashlib.md5(key_data.encode()).hexdigest()
 
     def get(
@@ -252,6 +260,22 @@ def fuse_results(
     context_parts = []
     source_chunks = []
 
+    # Compute proportional caps based on weight ratios
+    total_vector = len(vector_results) if vector_results else 0
+    total_graph_entities = (
+        len(graph_result.entities) if graph_result and graph_result.entities else 0
+    )
+
+    if analysis.vector_weight > 0 and total_vector > 0:
+        max_vector = max(1, round(total_vector * analysis.vector_weight))
+    else:
+        max_vector = 0
+
+    if analysis.graph_weight > 0 and total_graph_entities > 0:
+        max_graph_entities = max(1, round(total_graph_entities * analysis.graph_weight))
+    else:
+        max_graph_entities = 0
+
     # Add graph context if available and weighted
     if graph_result and graph_result.context and analysis.graph_weight > 0:
         context_parts.append("=== KNOWLEDGE GRAPH CONTEXT ===")
@@ -259,7 +283,11 @@ def fuse_results(
         context_parts.append("")
 
         # Track source chunks from graph (with limits to prevent LLM timeout)
+        entities_used = 0
         for entity in graph_result.entities:
+            if entities_used >= max_graph_entities:
+                break
+            entities_used += 1
             # Cap per-entity chunks
             entity_chunks = entity.source_chunks[:MAX_SOURCE_CHUNKS_PER_ENTITY]
             source_chunks.extend(entity_chunks)
@@ -268,10 +296,10 @@ def fuse_results(
                 source_chunks = source_chunks[:MAX_SOURCE_CHUNKS_FROM_GRAPH]
                 break
 
-    # Add vector results if available and weighted
+    # Add vector results if available and weighted (proportionally capped)
     if vector_results and analysis.vector_weight > 0:
         context_parts.append("=== DOCUMENT CONTEXT ===")
-        for i, nws in enumerate(vector_results, 1):
+        for i, nws in enumerate(vector_results[:max_vector], 1):
             context_parts.append(f"[Document {i}]")
             context_parts.append(nws.node.text)
             context_parts.append("")

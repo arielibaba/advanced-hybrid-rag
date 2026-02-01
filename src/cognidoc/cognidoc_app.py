@@ -1273,9 +1273,15 @@ def chat_conversation(
         if not enable_graph:
             hybrid_retriever.config.routing.strategy = "vector_only"
 
+        # MODERATE path: increase retrieval depth for mid-complexity queries
+        effective_top_k = TOP_K_RETRIEVED_CHILDREN
+        if complexity and 0.35 <= complexity.score < 0.55:
+            effective_top_k = round(TOP_K_RETRIEVED_CHILDREN * 1.5)
+            logger.info(f"MODERATE path: top_k {TOP_K_RETRIEVED_CHILDREN} → {effective_top_k}")
+
         hybrid_result = hybrid_retriever.retrieve(
             query=combo_query,
-            top_k=TOP_K_RETRIEVED_CHILDREN,
+            top_k=effective_top_k,
             use_reranking=enable_reranking,
             model=DEFAULT_LLM_MODEL,
             pre_computed_routing=routing_decision,  # Pass pre-computed routing
@@ -1298,9 +1304,14 @@ def chat_conversation(
     else:
         # Fallback to vector-only retrieval
         logger.info("Using vector-only retrieval")
+        effective_top_k = TOP_K_RETRIEVED_CHILDREN
+        if complexity and 0.35 <= complexity.score < 0.55:
+            effective_top_k = round(TOP_K_RETRIEVED_CHILDREN * 1.5)
+            logger.info(f"MODERATE path: top_k {TOP_K_RETRIEVED_CHILDREN} → {effective_top_k}")
+
         retrieved = []
         for q in candidates:
-            results = child_index.search(q, top_k=TOP_K_RETRIEVED_CHILDREN)
+            results = child_index.search(q, top_k=effective_top_k)
             retrieved.extend(results)
 
         # Get parent documents

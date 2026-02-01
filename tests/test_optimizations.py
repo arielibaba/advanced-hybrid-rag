@@ -25,6 +25,7 @@ import pytest
 # 1. Entity Extraction Concurrency Tests
 # =============================================================================
 
+
 class TestEntityExtractionConcurrency:
     """Tests for entity extraction concurrency optimization."""
 
@@ -42,17 +43,17 @@ class TestEntityExtractionConcurrency:
         from cognidoc.extract_entities import get_optimal_concurrency
 
         # Mock different CPU counts
-        with patch('os.cpu_count', return_value=4):
+        with patch("os.cpu_count", return_value=4):
             result = get_optimal_concurrency()
             # With 4 cores: min(8, 4-1) = 3, max(2, 3) = 3
             assert result == 3
 
-        with patch('os.cpu_count', return_value=2):
+        with patch("os.cpu_count", return_value=2):
             result = get_optimal_concurrency()
             # With 2 cores: min(8, 2-1) = 1, max(2, 1) = 2
             assert result == 2
 
-        with patch('os.cpu_count', return_value=16):
+        with patch("os.cpu_count", return_value=16):
             result = get_optimal_concurrency()
             # With 16 cores: min(8, 16-1) = 8, max(2, 8) = 8
             assert result == 8
@@ -61,7 +62,7 @@ class TestEntityExtractionConcurrency:
         """Test fallback when cpu_count returns None."""
         from cognidoc.extract_entities import get_optimal_concurrency
 
-        with patch('os.cpu_count', return_value=None):
+        with patch("os.cpu_count", return_value=None):
             result = get_optimal_concurrency()
             # Should use fallback of 4 cores: min(8, 4-1) = 3
             assert result == 3
@@ -70,7 +71,7 @@ class TestEntityExtractionConcurrency:
         """Test fallback when cpu_count raises exception."""
         from cognidoc.extract_entities import get_optimal_concurrency
 
-        with patch('os.cpu_count', side_effect=Exception("Test error")):
+        with patch("os.cpu_count", side_effect=Exception("Test error")):
             result = get_optimal_concurrency()
             # Should return safe default of 4
             assert result == 4
@@ -102,6 +103,7 @@ class TestEntityExtractionConcurrency:
 # =============================================================================
 # 2. Thread Pool Size Tests (Parallel Retrieval)
 # =============================================================================
+
 
 class TestThreadPoolSizeOptimization:
     """Tests for thread pool size in parallel retrieval."""
@@ -165,6 +167,7 @@ class TestThreadPoolSizeOptimization:
 # =============================================================================
 # 3. Parallel Extraction Tests (asyncio.as_completed)
 # =============================================================================
+
 
 class TestParallelExtraction:
     """Tests for parallel extraction using asyncio.as_completed."""
@@ -241,10 +244,7 @@ class TestParallelExtraction:
         async def run_test():
             max_concurrent = 4
             semaphore = asyncio.Semaphore(max_concurrent)
-            tasks = [
-                asyncio.create_task(limited_task(semaphore, i))
-                for i in range(20)
-            ]
+            tasks = [asyncio.create_task(limited_task(semaphore, i)) for i in range(20)]
             await asyncio.gather(*tasks)
 
         asyncio.run(run_test())
@@ -255,6 +255,7 @@ class TestParallelExtraction:
 # =============================================================================
 # 4. PDF Batch Conversion Tests
 # =============================================================================
+
 
 # Module-level function for ProcessPoolExecutor (can't pickle local functions)
 def _cpu_bound_task(n):
@@ -346,6 +347,7 @@ class TestPDFBatchConversion:
 # 5. YOLO Parallel Loading Tests
 # =============================================================================
 
+
 class TestYOLOParallelLoading:
     """Tests for YOLO parallel image loading with ThreadPoolExecutor."""
 
@@ -378,6 +380,7 @@ class TestYOLOParallelLoading:
 
         # Function should accept batch_size and use_batching parameters
         import inspect
+
         sig = inspect.signature(extract_objects_from_image)
         params = list(sig.parameters.keys())
 
@@ -401,17 +404,22 @@ class TestYOLOParallelLoading:
 # 6. Embeddings Connection Pooling Tests
 # =============================================================================
 
+
 class TestEmbeddingsConnectionPooling:
     """Tests for embeddings connection pooling with shared httpx client."""
 
     def test_shared_async_client_singleton(self):
         """Test that OllamaEmbeddingProvider uses a shared async client."""
-        from cognidoc.utils.embedding_providers import OllamaEmbeddingProvider, EmbeddingConfig, EmbeddingProvider
+        from cognidoc.utils.embedding_providers import (
+            OllamaEmbeddingProvider,
+            EmbeddingConfig,
+            EmbeddingProvider,
+        )
 
         # Reset shared client
         OllamaEmbeddingProvider._shared_async_client = None
 
-        with patch('ollama.Client'):
+        with patch("ollama.Client"):
             config = EmbeddingConfig(
                 provider=EmbeddingProvider.OLLAMA,
                 model="test-model",
@@ -420,7 +428,7 @@ class TestEmbeddingsConnectionPooling:
             provider2 = OllamaEmbeddingProvider(config)
 
         # Get shared client (this should create it)
-        with patch('httpx.AsyncClient') as mock_client:
+        with patch("httpx.AsyncClient") as mock_client:
             mock_instance = MagicMock()
             mock_client.return_value = mock_instance
 
@@ -439,8 +447,8 @@ class TestEmbeddingsConnectionPooling:
         # Reset shared client
         OllamaEmbeddingProvider._shared_async_client = None
 
-        with patch('httpx.AsyncClient') as mock_client:
-            with patch('httpx.Limits') as mock_limits:
+        with patch("httpx.AsyncClient") as mock_client:
+            with patch("httpx.Limits") as mock_limits:
                 mock_limits.return_value = MagicMock()
                 mock_client.return_value = MagicMock()
 
@@ -454,13 +462,17 @@ class TestEmbeddingsConnectionPooling:
 
     def test_embed_async_uses_connection_pooling(self):
         """Test that embed_async uses the shared client."""
-        from cognidoc.utils.embedding_providers import OllamaEmbeddingProvider, EmbeddingConfig, EmbeddingProvider
+        from cognidoc.utils.embedding_providers import (
+            OllamaEmbeddingProvider,
+            EmbeddingConfig,
+            EmbeddingProvider,
+        )
 
         # Reset shared client
         OllamaEmbeddingProvider._shared_async_client = None
 
         async def run_test():
-            with patch('ollama.Client'):
+            with patch("ollama.Client"):
                 config = EmbeddingConfig(
                     provider=EmbeddingProvider.OLLAMA,
                     model="test-model",
@@ -474,9 +486,7 @@ class TestEmbeddingsConnectionPooling:
                 mock_client.post.return_value = mock_response
 
                 with patch.object(
-                    OllamaEmbeddingProvider,
-                    '_get_async_client',
-                    return_value=mock_client
+                    OllamaEmbeddingProvider, "_get_async_client", return_value=mock_client
                 ):
                     texts = ["text1", "text2"]
                     results = await provider.embed_async(texts, max_concurrent=2)
@@ -516,7 +526,7 @@ class TestEmbeddingsConnectionPooling:
                     ),
                 ]
 
-                with patch('httpx.AsyncClient') as mock_client_class:
+                with patch("httpx.AsyncClient") as mock_client_class:
                     mock_client = AsyncMock()
                     mock_response = MagicMock()
                     mock_response.json.return_value = {"embedding": [0.1, 0.2]}
@@ -525,7 +535,7 @@ class TestEmbeddingsConnectionPooling:
                     mock_client.__aexit__ = AsyncMock()
                     mock_client_class.return_value = mock_client
 
-                    with patch('cognidoc.create_embeddings.get_embedding_cache', return_value=None):
+                    with patch("cognidoc.create_embeddings.get_embedding_cache", return_value=None):
                         success, errors = await embed_batch_async(
                             chunks,
                             embeddings_path,
@@ -537,7 +547,7 @@ class TestEmbeddingsConnectionPooling:
                         # Verify AsyncClient was created with limits
                         mock_client_class.assert_called_once()
                         call_kwargs = mock_client_class.call_args.kwargs
-                        assert 'limits' in call_kwargs
+                        assert "limits" in call_kwargs
 
         asyncio.run(run_test())
 
@@ -545,6 +555,7 @@ class TestEmbeddingsConnectionPooling:
 # =============================================================================
 # Integration Tests
 # =============================================================================
+
 
 class TestOptimizationsIntegration:
     """Integration tests for multiple optimizations working together."""
@@ -610,6 +621,7 @@ class TestOptimizationsIntegration:
 # Performance Benchmark Tests (optional, skipped by default)
 # =============================================================================
 
+
 @pytest.mark.skip(reason="Performance benchmarks - run manually")
 class TestOptimizationBenchmarks:
     """Performance benchmark tests for optimizations."""
@@ -652,12 +664,14 @@ class TestOptimizationBenchmarks:
 # 7. Reranking Parser Tests
 # =============================================================================
 
+
 class TestRerankingParser:
     """Tests for LLM reranking response parsing robustness."""
 
     def _make_docs(self, n=5):
         """Create n mock documents for reranking."""
         from cognidoc.utils.rag_utils import Document, NodeWithScore
+
         docs = []
         for i in range(n):
             node = Document(text=f"Document content {i+1}", metadata={})
@@ -668,6 +682,7 @@ class TestRerankingParser:
     def test_standard_format(self, mock_llm):
         """Test parsing of standard 'Document N (score: X): summary' format."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.return_value = (
             "Document 2 (score: 9): Very relevant\n"
             "Document 1 (score: 7): Somewhat relevant\n"
@@ -684,9 +699,9 @@ class TestRerankingParser:
     def test_score_with_equals(self, mock_llm):
         """Test parsing with 'score = X' format."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.return_value = (
-            "Document 3 (score = 8): good match\n"
-            "Document 1 (score = 5): ok match"
+            "Document 3 (score = 8): good match\n" "Document 1 (score = 5): ok match"
         )
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
@@ -698,9 +713,9 @@ class TestRerankingParser:
     def test_no_score_defaults_to_five(self, mock_llm):
         """Test that missing score defaults to 5.0."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.return_value = (
-            "Document 1: very relevant content\n"
-            "Document 3: somewhat relevant content"
+            "Document 1: very relevant content\n" "Document 3: somewhat relevant content"
         )
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
@@ -711,9 +726,9 @@ class TestRerankingParser:
     def test_markdown_bold_format(self, mock_llm):
         """Test parsing when LLM wraps 'Document' in markdown bold."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.return_value = (
-            "**Document 2** (score: 9): relevant\n"
-            "**Document 1** (score: 6): ok"
+            "**Document 2** (score: 9): relevant\n" "**Document 1** (score: 6): ok"
         )
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
@@ -724,10 +739,9 @@ class TestRerankingParser:
     def test_numbered_list_format(self, mock_llm):
         """Test parsing when LLM prefixes with numbered list."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.return_value = (
-            "1. Document 3 (score: 10)\n"
-            "2. Document 1 (score: 7)\n"
-            "3. Document 5 (score: 4)"
+            "1. Document 3 (score: 10)\n" "2. Document 1 (score: 7)\n" "3. Document 5 (score: 4)"
         )
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
@@ -738,10 +752,8 @@ class TestRerankingParser:
     def test_lowercase_document(self, mock_llm):
         """Test parsing with lowercase 'document'."""
         from cognidoc.utils.rag_utils import rerank_documents
-        mock_llm.return_value = (
-            "document 2 (score: 8): relevant\n"
-            "document 4 (score: 5): ok"
-        )
+
+        mock_llm.return_value = "document 2 (score: 8): relevant\n" "document 4 (score: 5): ok"
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
         assert len(result) == 2
@@ -750,10 +762,8 @@ class TestRerankingParser:
     def test_decimal_scores(self, mock_llm):
         """Test parsing with decimal scores like 8.5."""
         from cognidoc.utils.rag_utils import rerank_documents
-        mock_llm.return_value = (
-            "Document 1 (score: 8.5): great\n"
-            "Document 3 (score: 6.2): ok"
-        )
+
+        mock_llm.return_value = "Document 1 (score: 8.5): great\n" "Document 3 (score: 6.2): ok"
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
         assert len(result) == 2
@@ -764,6 +774,7 @@ class TestRerankingParser:
     def test_out_of_range_doc_ignored(self, mock_llm):
         """Test that doc numbers outside valid range are ignored."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.return_value = (
             "Document 0 (score: 9): invalid\n"
             "Document 1 (score: 8): valid\n"
@@ -778,6 +789,7 @@ class TestRerankingParser:
     def test_empty_response_falls_back(self, mock_llm):
         """Test that unparseable response returns original order."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.return_value = "I cannot rank these documents."
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
@@ -789,6 +801,7 @@ class TestRerankingParser:
     def test_llm_exception_falls_back(self, mock_llm):
         """Test that LLM exception returns original order."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.side_effect = Exception("API error")
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
@@ -798,10 +811,9 @@ class TestRerankingParser:
     def test_sorts_by_score_descending(self, mock_llm):
         """Test that results are sorted by score descending."""
         from cognidoc.utils.rag_utils import rerank_documents
+
         mock_llm.return_value = (
-            "Document 3 (score: 3)\n"
-            "Document 1 (score: 9)\n"
-            "Document 2 (score: 6)"
+            "Document 3 (score: 3)\n" "Document 1 (score: 9)\n" "Document 2 (score: 6)"
         )
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=3)
@@ -812,9 +824,291 @@ class TestRerankingParser:
     def test_top_n_limits_output(self, mock_llm):
         """Test that top_n limits the number of returned docs."""
         from cognidoc.utils.rag_utils import rerank_documents
-        mock_llm.return_value = "\n".join(
-            f"Document {i} (score: {10-i})" for i in range(1, 6)
-        )
+
+        mock_llm.return_value = "\n".join(f"Document {i} (score: {10-i})" for i in range(1, 6))
         docs = self._make_docs(5)
         result = rerank_documents(docs, "test query", top_n=2)
         assert len(result) == 2
+
+
+# =============================================================================
+# 8. Cache Key Normalization Tests
+# =============================================================================
+
+
+class TestCacheNormalization:
+    """Tests for retrieval cache key normalization."""
+
+    def test_cache_key_case_insensitive(self):
+        """Same query with different casing should produce the same cache key."""
+        from cognidoc.hybrid_retriever import RetrievalCache
+
+        cache = RetrievalCache()
+        key1 = cache._make_key("What is X?", 10, True)
+        key2 = cache._make_key("what is x?", 10, True)
+        assert key1 == key2
+
+    def test_cache_key_strips_whitespace(self):
+        """Extra whitespace should be collapsed."""
+        from cognidoc.hybrid_retriever import RetrievalCache
+
+        cache = RetrievalCache()
+        key1 = cache._make_key("  hello  world  ", 10, True)
+        key2 = cache._make_key("hello world", 10, True)
+        assert key1 == key2
+
+    def test_cache_key_strips_trailing_punctuation(self):
+        """Trailing punctuation should be stripped."""
+        from cognidoc.hybrid_retriever import RetrievalCache
+
+        cache = RetrievalCache()
+        key1 = cache._make_key("hello?", 10, True)
+        key2 = cache._make_key("hello", 10, True)
+        assert key1 == key2
+
+    def test_cache_key_different_queries_differ(self):
+        """Different queries should produce different keys."""
+        from cognidoc.hybrid_retriever import RetrievalCache
+
+        cache = RetrievalCache()
+        key1 = cache._make_key("what is X", 10, True)
+        key2 = cache._make_key("what is Y", 10, True)
+        assert key1 != key2
+
+
+# =============================================================================
+# 9. Proportional Confidence Adjustment Tests
+# =============================================================================
+
+
+class TestProportionalConfidence:
+    """Tests for proportional confidence shift in should_fallback."""
+
+    def _make_orchestrator(self, threshold=0.3):
+        from cognidoc.query_orchestrator import QueryOrchestrator
+
+        config = Mock()
+        config.confidence_threshold = threshold
+        config.routing = Mock()
+        config.routing.strategy = "auto"
+        orch = QueryOrchestrator.__new__(QueryOrchestrator)
+        orch.config = config
+        return orch
+
+    def test_shift_zero_at_threshold(self):
+        """Confidence at threshold should produce zero shift."""
+        orch = self._make_orchestrator(threshold=0.3)
+        assert orch._confidence_shift(0.3) == 0.0
+
+    def test_shift_max_at_zero(self):
+        """Zero confidence should produce max shift of 0.3."""
+        orch = self._make_orchestrator(threshold=0.3)
+        assert abs(orch._confidence_shift(0.0) - 0.3) < 1e-9
+
+    def test_shift_proportional(self):
+        """Half-threshold confidence should produce half max shift."""
+        orch = self._make_orchestrator(threshold=0.3)
+        assert abs(orch._confidence_shift(0.15) - 0.15) < 1e-9
+
+    def test_should_fallback_proportional(self):
+        """Integration: verify weights adjusted proportionally."""
+        from cognidoc.query_orchestrator import RoutingDecision, QueryType, RetrievalMode
+
+        orch = self._make_orchestrator(threshold=0.3)
+        decision = RoutingDecision(
+            query="test",
+            query_type=QueryType.FACTUAL,
+            mode=RetrievalMode.HYBRID,
+            vector_weight=0.7,
+            graph_weight=0.3,
+            skip_vector=False,
+            skip_graph=False,
+            confidence=0.8,
+            reasoning="test",
+        )
+        # Vector confidence barely below threshold (0.29) → small shift
+        adjusted = orch.should_fallback(decision, vector_confidence=0.29, graph_confidence=0.8)
+        shift = 0.3 * (1.0 - 0.29 / 0.3)
+        assert abs(adjusted.graph_weight - (0.3 + shift)) < 1e-9
+        assert abs(adjusted.vector_weight - (0.7 - shift)) < 1e-9
+
+
+# =============================================================================
+# 10. Proportional Fusion Tests
+# =============================================================================
+
+
+class TestProportionalFusion:
+    """Tests for proportional result capping in fuse_results."""
+
+    def _make_vector_results(self, n):
+        results = []
+        for i in range(n):
+            node = Mock()
+            node.text = f"Document {i} content"
+            node.metadata = {"name": f"doc_{i}.pdf"}
+            nws = Mock()
+            nws.node = node
+            results.append(nws)
+        return results
+
+    def _make_graph_result(self, n_entities, chunks_per=3):
+        graph = Mock()
+        entities = []
+        for i in range(n_entities):
+            entity = Mock()
+            entity.source_chunks = [f"chunk_{i}_{j}" for j in range(chunks_per)]
+            entities.append(entity)
+        graph.entities = entities
+        graph.context = "Graph context text"
+        return graph
+
+    def _make_analysis(self, vector_weight, graph_weight):
+        analysis = Mock()
+        analysis.vector_weight = vector_weight
+        analysis.graph_weight = graph_weight
+        return analysis
+
+    def test_fusion_scales_vector_by_weight(self):
+        """Weight=0.2 with 10 results should use ~2 results."""
+        from cognidoc.hybrid_retriever import fuse_results
+
+        vector = self._make_vector_results(10)
+        graph = self._make_graph_result(0)
+        graph.context = ""
+        graph.entities = []
+        analysis = self._make_analysis(0.2, 0.8)
+
+        _, sources = fuse_results("test", vector, graph, analysis)
+        # max_vector = max(1, round(10 * 0.2)) = 2
+        assert len([s for s in sources if s.startswith("doc_")]) == 2
+
+    def test_fusion_scales_graph_by_weight(self):
+        """Weight=0.3 with 10 entities should use ~3 entities."""
+        from cognidoc.hybrid_retriever import fuse_results
+
+        vector = self._make_vector_results(0)
+        graph = self._make_graph_result(10, chunks_per=1)
+        analysis = self._make_analysis(0.0, 0.3)
+
+        _, sources = fuse_results("test", vector, graph, analysis)
+        # max_graph_entities = max(1, round(10 * 0.3)) = 3, each with 1 chunk
+        assert len(sources) == 3
+
+    def test_fusion_minimum_one(self):
+        """Weight=0.1 with 5 results should still use at least 1."""
+        from cognidoc.hybrid_retriever import fuse_results
+
+        vector = self._make_vector_results(5)
+        graph = self._make_graph_result(0)
+        graph.context = ""
+        graph.entities = []
+        analysis = self._make_analysis(0.1, 0.9)
+
+        _, sources = fuse_results("test", vector, graph, analysis)
+        # max_vector = max(1, round(5 * 0.1)) = max(1, 1) = 1
+        assert len([s for s in sources if s.startswith("doc_")]) >= 1
+
+    def test_fusion_zero_weight_excludes(self):
+        """Weight=0 should exclude results entirely."""
+        from cognidoc.hybrid_retriever import fuse_results
+
+        vector = self._make_vector_results(5)
+        graph = self._make_graph_result(0)
+        graph.context = ""
+        graph.entities = []
+        analysis = self._make_analysis(0.0, 1.0)
+
+        context, sources = fuse_results("test", vector, graph, analysis)
+        assert "DOCUMENT CONTEXT" not in context
+        assert len([s for s in sources if s.startswith("doc_")]) == 0
+
+
+# =============================================================================
+# 11. Multilingual Query Pattern Tests
+# =============================================================================
+
+
+class TestMultilingualPatterns:
+    """Tests for multilingual query classification patterns."""
+
+    def test_french_relational(self):
+        """French relational query should be classified correctly."""
+        from cognidoc.query_orchestrator import classify_query_rules, QueryType
+
+        qtype, conf, _ = classify_query_rules("quelle est la relation entre X et Y")
+        assert qtype == QueryType.RELATIONAL
+
+    def test_french_question_word(self):
+        """French question word should classify as FACTUAL."""
+        from cognidoc.query_orchestrator import classify_query_rules, QueryType
+
+        qtype, conf, _ = classify_query_rules("quel est le rôle de X")
+        assert qtype == QueryType.FACTUAL
+
+    def test_spanish_procedural(self):
+        """Spanish procedural query should be classified correctly."""
+        from cognidoc.query_orchestrator import classify_query_rules, QueryType
+
+        qtype, conf, _ = classify_query_rules("cómo hacer una presentación")
+        assert qtype == QueryType.PROCEDURAL
+
+    def test_spanish_question_word(self):
+        """Spanish question word should classify as FACTUAL."""
+        from cognidoc.query_orchestrator import classify_query_rules, QueryType
+
+        qtype, conf, _ = classify_query_rules("qué es la inteligencia artificial")
+        assert qtype == QueryType.FACTUAL
+
+    def test_german_exploratory(self):
+        """German summary query should classify as EXPLORATORY."""
+        from cognidoc.query_orchestrator import classify_query_rules, QueryType
+
+        qtype, conf, _ = classify_query_rules("zusammenfassung von kapitel 3")
+        assert qtype == QueryType.EXPLORATORY
+
+    def test_german_question_word(self):
+        """German question word should classify as FACTUAL."""
+        from cognidoc.query_orchestrator import classify_query_rules, QueryType
+
+        qtype, conf, _ = classify_query_rules("was ist maschinelles lernen")
+        assert qtype == QueryType.FACTUAL
+
+
+# =============================================================================
+# 12. MODERATE Path Differentiation Tests
+# =============================================================================
+
+
+class TestModeratePathDifferentiation:
+    """Tests for MODERATE path top_k increase."""
+
+    def test_moderate_top_k_multiplied(self):
+        """Score 0.45 should multiply top_k by 1.5."""
+        from cognidoc.constants import TOP_K_RETRIEVED_CHILDREN
+
+        score = 0.45
+        effective_top_k = TOP_K_RETRIEVED_CHILDREN
+        if 0.35 <= score < 0.55:
+            effective_top_k = round(TOP_K_RETRIEVED_CHILDREN * 1.5)
+        assert effective_top_k == round(TOP_K_RETRIEVED_CHILDREN * 1.5)
+
+    def test_fast_top_k_unchanged(self):
+        """Score 0.2 should keep original top_k."""
+        from cognidoc.constants import TOP_K_RETRIEVED_CHILDREN
+
+        score = 0.2
+        effective_top_k = TOP_K_RETRIEVED_CHILDREN
+        if 0.35 <= score < 0.55:
+            effective_top_k = round(TOP_K_RETRIEVED_CHILDREN * 1.5)
+        assert effective_top_k == TOP_K_RETRIEVED_CHILDREN
+
+    def test_agent_path_not_affected(self):
+        """Score >= 0.55 (agent path) should keep original top_k."""
+        from cognidoc.constants import TOP_K_RETRIEVED_CHILDREN
+
+        score = 0.6
+        effective_top_k = TOP_K_RETRIEVED_CHILDREN
+        if 0.35 <= score < 0.55:
+            effective_top_k = round(TOP_K_RETRIEVED_CHILDREN * 1.5)
+        assert effective_top_k == TOP_K_RETRIEVED_CHILDREN

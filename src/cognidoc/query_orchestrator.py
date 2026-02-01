@@ -91,6 +91,19 @@ QUERY_PATTERNS = {
         r"influences?",
         r"between .+ and .+",
         r"link between",
+        # French
+        r"relation entre",
+        r"li[ée][es]? [àa]",
+        r"rapport entre",
+        r"lien entre",
+        # Spanish
+        r"relaci[oó]n entre",
+        r"relacionado con",
+        r"conexi[oó]n entre",
+        # German
+        r"beziehung zwischen",
+        r"verbunden mit",
+        r"zusammenhang zwischen",
     ],
     QueryType.COMPARATIVE: [
         r"compare",
@@ -103,6 +116,20 @@ QUERY_PATTERNS = {
         r"similar to",
         r"differ from",
         r"contrast",
+        # French
+        r"compar[eé]",
+        r"diff[ée]rence entre",
+        r"par rapport [àa]",
+        # Spanish
+        r"comparar",
+        r"diferencia entre",
+        r"mejor que",
+        r"peor que",
+        # German
+        r"vergleich",
+        r"unterschied zwischen",
+        r"besser als",
+        r"schlechter als",
     ],
     QueryType.EXPLORATORY: [
         r"what are all",
@@ -116,6 +143,22 @@ QUERY_PATTERNS = {
         r"key (?:topics|themes|concepts|ideas|points)",
         r"how many",
         r"enumerate",
+        # French
+        r"r[ée]sum[ée]",
+        r"aper[çc]u",
+        r"liste[rz]? (?:tous|toutes)",
+        r"combien",
+        r"vue d'ensemble",
+        # Spanish
+        r"resumen",
+        r"listar todos",
+        r"cu[aá]ntos",
+        r"enumerar",
+        # German
+        r"zusammenfassung",
+        r"[üu]berblick",
+        r"alle auflisten",
+        r"wie viele",
     ],
     QueryType.PROCEDURAL: [
         r"how (?:do|does|to|can|should)",
@@ -127,6 +170,21 @@ QUERY_PATTERNS = {
         r"tutorial",
         r"walk me through",
         r"explain how",
+        # French
+        r"comment (?:faire|proc[ée]der|r[ée]aliser)",
+        r"[ée]tapes pour",
+        r"proc[ée]dure",
+        r"guide pour",
+        # Spanish
+        r"c[oó]mo (?:hacer|realizar|proceder)",
+        r"pasos para",
+        r"procedimiento",
+        r"gu[ií]a para",
+        # German
+        r"wie (?:kann|soll|mach)",
+        r"schritte (?:f[üu]r|zu)",
+        r"anleitung",
+        r"verfahren",
     ],
     QueryType.ANALYTICAL: [
         r"analyze",
@@ -138,6 +196,21 @@ QUERY_PATTERNS = {
         r"deep dive",
         r"in-depth",
         r"comprehensive",
+        # French
+        r"analyser",
+        r"analyse de",
+        r"[ée]valuer",
+        r"examiner",
+        # Spanish
+        r"analizar",
+        r"an[aá]lisis de",
+        r"evaluar",
+        r"examinar",
+        # German
+        r"analysieren",
+        r"analyse von",
+        r"bewerten",
+        r"untersuchen",
     ],
 }
 
@@ -174,6 +247,24 @@ def classify_query_rules(query: str) -> Tuple[QueryType, float, str]:
 
     if re.match(r"^(why|how)\b", query_lower):
         return (QueryType.ANALYTICAL, 0.5, "Analytical question word")
+
+    # French question words
+    if re.match(r"^(qu[e']|quel[le]?s?|o[uù]|quand|qui|combien)\b", query_lower):
+        return (QueryType.FACTUAL, 0.6, "French question word detected")
+    if re.match(r"^(pourquoi|comment)\b", query_lower):
+        return (QueryType.ANALYTICAL, 0.5, "French analytical question word")
+
+    # Spanish question words
+    if re.match(r"^(qu[eé]|cu[aá]l|d[oó]nde|cu[aá]ndo|qui[eé]n|cu[aá]nto)\b", query_lower):
+        return (QueryType.FACTUAL, 0.6, "Spanish question word detected")
+    if re.match(r"^(por qu[eé]|c[oó]mo)\b", query_lower):
+        return (QueryType.ANALYTICAL, 0.5, "Spanish analytical question word")
+
+    # German question words
+    if re.match(r"^(was|wer|wo|wann|welche[rs]?)\b", query_lower):
+        return (QueryType.FACTUAL, 0.6, "German question word detected")
+    if re.match(r"^(warum|wie)\b", query_lower):
+        return (QueryType.ANALYTICAL, 0.5, "German analytical question word")
 
     return (QueryType.UNKNOWN, 0.3, "No pattern matched")
 
@@ -348,6 +439,13 @@ class QueryOrchestrator:
 
         return decision
 
+    def _confidence_shift(self, confidence: float) -> float:
+        """Proportional shift: larger when confidence is further below threshold."""
+        threshold = self.config.confidence_threshold
+        if confidence >= threshold:
+            return 0.0
+        return 0.3 * (1.0 - confidence / threshold)
+
     def should_fallback(
         self,
         decision: RoutingDecision,
@@ -357,7 +455,8 @@ class QueryOrchestrator:
         """
         Adjust routing based on retrieval confidence.
 
-        If one system returns low confidence, boost the other.
+        If one system returns low confidence, boost the other proportionally.
+        The shift scales from 0 (at threshold) to 0.3 (at zero confidence).
         """
         adjusted = RoutingDecision(
             query=decision.query,
@@ -374,20 +473,22 @@ class QueryOrchestrator:
 
         threshold = self.config.confidence_threshold
 
-        # If vector failed, boost graph
+        # If vector failed, boost graph proportionally
         if vector_confidence < threshold and not decision.skip_graph:
-            adjusted.graph_weight = min(1.0, adjusted.graph_weight + 0.3)
-            adjusted.vector_weight = max(0.0, adjusted.vector_weight - 0.3)
+            shift = self._confidence_shift(vector_confidence)
+            adjusted.graph_weight = min(1.0, adjusted.graph_weight + shift)
+            adjusted.vector_weight = max(0.0, adjusted.vector_weight - shift)
             adjusted.reasoning += (
-                f" | Vector low confidence ({vector_confidence:.2f}), boosted graph"
+                f" | Vector low confidence ({vector_confidence:.2f}), boosted graph by {shift:.2f}"
             )
 
-        # If graph failed, boost vector
+        # If graph failed, boost vector proportionally
         if graph_confidence < threshold and not decision.skip_vector:
-            adjusted.vector_weight = min(1.0, adjusted.vector_weight + 0.3)
-            adjusted.graph_weight = max(0.0, adjusted.graph_weight - 0.3)
+            shift = self._confidence_shift(graph_confidence)
+            adjusted.vector_weight = min(1.0, adjusted.vector_weight + shift)
+            adjusted.graph_weight = max(0.0, adjusted.graph_weight - shift)
             adjusted.reasoning += (
-                f" | Graph low confidence ({graph_confidence:.2f}), boosted vector"
+                f" | Graph low confidence ({graph_confidence:.2f}), boosted vector by {shift:.2f}"
             )
 
         # If both failed, use adaptive mode
