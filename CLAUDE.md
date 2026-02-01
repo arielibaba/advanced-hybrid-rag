@@ -83,6 +83,8 @@ Resume from specific stage:
 
 ## Architecture
 
+> **Deep dive:** For detailed explanations of the query pipeline internals (complexity evaluation formula, LRU cache, vector/graph fusion, ReAct agent loop), see [`docs/architecture/query_pipeline.md`](docs/architecture/query_pipeline.md).
+
 ### Source Layout
 
 Source code is in `src/cognidoc/` but installs as `cognidoc` package:
