@@ -252,125 +252,13 @@ class CogniDocAgent:
             AgentResult with answer and execution trace
         """
         logger.info(f"Agent starting for query: {query[:100]}...")
-
-        context = AgentContext(query=query)
-        step_count = 0
-
+        gen = self._run_loop(query, complexity)
         try:
-            while step_count < self.max_steps:
-                step_count += 1
-                step = AgentStep(step_number=step_count)
-
-                # 1. THINK + DECIDE
-                context.current_state = AgentState.THINKING
-                thought, action = self._think_and_decide(context)
-                step.thought = thought
-                step.action = action
-
-                if action is None:
-                    logger.warning(f"Step {step_count}: No action decided")
-                    break
-
-                logger.info(f"Step {step_count}: {action.tool.value}")
-
-                # 2. Check for terminal actions
-                if action.tool == ToolName.FINAL_ANSWER:
-                    # Extract answer, with fallback to any string value in arguments
-                    answer = action.arguments.get("answer", "")
-                    if not answer and action.arguments:
-                        # Fallback: use first string value if "answer" key not found
-                        for v in action.arguments.values():
-                            if isinstance(v, str) and v:
-                                answer = v
-                                break
-                    step.observation = "Final answer provided"
-                    context.add_step(step)
-                    context.current_state = AgentState.FINISHED
-
-                    return AgentResult(
-                        query=query,
-                        answer=answer,
-                        steps=context.steps,
-                        success=True,
-                        metadata={
-                            "total_steps": step_count,
-                            "tools_used": [s.action.tool.value for s in context.steps if s.action],
-                        },
-                    )
-
-                if action.tool == ToolName.ASK_CLARIFICATION:
-                    question = action.arguments.get("question", "Could you clarify your question?")
-                    step.observation = f"Clarification requested: {question}"
-                    context.add_step(step)
-                    context.current_state = AgentState.NEEDS_CLARIFICATION
-
-                    return AgentResult(
-                        query=query,
-                        answer="",
-                        steps=context.steps,
-                        success=False,
-                        needs_clarification=True,
-                        clarification_question=question,
-                        metadata={"total_steps": step_count},
-                    )
-
-                # 3. ACT
-                context.current_state = AgentState.ACTING
-                result = self.tools.execute(action)
-                step.observation = result.observation
-
-                # 4. OBSERVE + REFLECT (parallel)
-                # Start reflection in background thread while storing context
-                context.current_state = AgentState.REFLECTING
-                reflection_future: Future = _reflection_executor.submit(
-                    self._reflect, context, step.observation
-                )
-
-                # Store useful context (runs while reflection computes in parallel)
-                if result.success and result.data:
-                    if action.tool == ToolName.RETRIEVE_VECTOR:
-                        for doc in result.data[:3]:
-                            context.add_context(doc.get("text", ""))
-                    elif action.tool == ToolName.RETRIEVE_GRAPH:
-                        context.add_context(result.data.get("context", ""))
-                    elif action.tool == ToolName.LOOKUP_ENTITY:
-                        if result.data:
-                            context.entities_found.append(result.data)
-                    elif action.tool in (ToolName.SYNTHESIZE, ToolName.COMPARE_ENTITIES):
-                        context.add_context(str(result.data))
-
-                # Wait for reflection to complete (usually already done by now)
-                step.reflection = reflection_future.result(timeout=30.0)
-
-                context.add_step(step)
-
-            # Max steps reached - force conclusion
-            logger.warning(f"Agent reached max_steps ({self.max_steps}), forcing conclusion")
-            final_answer = self._force_conclusion(context)
-
-            return AgentResult(
-                query=query,
-                answer=final_answer,
-                steps=context.steps,
-                success=True,
-                metadata={
-                    "total_steps": step_count,
-                    "forced_conclusion": True,
-                    "tools_used": [s.action.tool.value for s in context.steps if s.action],
-                },
-            )
-
-        except Exception as e:
-            logger.error(f"Agent error: {e}", exc_info=True)
-            context.current_state = AgentState.ERROR
-
-            return AgentResult(
-                query=query,
-                answer=f"An error occurred while processing your query: {str(e)}",
-                steps=context.steps,
-                success=False,
-                error=str(e),
-            )
+            while True:
+                next(gen)
+        except StopIteration as e:
+            result: AgentResult = e.value
+            return result
 
     def _think_and_decide(self, context: AgentContext) -> Tuple[str, Optional[ToolCall]]:
         """
@@ -524,7 +412,19 @@ Provide the best possible answer with the available information. If some aspects
             Returns AgentResult when complete
         """
         logger.info(f"Agent streaming for query: {query[:100]}...")
+        return (yield from self._run_loop(query, complexity))
 
+    def _run_loop(
+        self,
+        query: str,
+        complexity: Optional[ComplexityScore] = None,
+    ) -> Generator[Tuple[AgentState, str], None, AgentResult]:
+        """
+        Core agent loop shared by run() and run_streaming().
+
+        Yields (AgentState, message) tuples for streaming progress.
+        Returns AgentResult when complete.
+        """
         context = AgentContext(query=query)
         step_count = 0
 
@@ -533,7 +433,8 @@ Provide the best possible answer with the available information. If some aspects
                 step_count += 1
                 step = AgentStep(step_number=step_count)
 
-                # 1. THINK - Show that we're analyzing
+                # 1. THINK + DECIDE
+                context.current_state = AgentState.THINKING
                 yield (
                     AgentState.THINKING,
                     f"[Step {step_count}/{self.max_steps}] Analyzing query...",
@@ -541,28 +442,29 @@ Provide the best possible answer with the available information. If some aspects
 
                 thought, action = self._think_and_decide(context)
                 step.thought = thought
+                step.action = action
 
                 if action is None:
+                    logger.warning(f"Step {step_count}: No action decided")
                     yield (AgentState.THINKING, "No action decided, finishing...")
                     break
 
-                # Show the thought process (truncated for readability)
+                logger.info(f"Step {step_count}: {action.tool.value}")
+
                 thought_preview = thought[:150].replace("\n", " ") if thought else "..."
                 yield (AgentState.THINKING, f"Thought: {thought_preview}")
 
-                # 2. Check terminal actions
+                # 2. Check for terminal actions
                 if action.tool == ToolName.FINAL_ANSWER:
-                    # Extract answer, with fallback to any string value in arguments
                     answer = action.arguments.get("answer", "")
                     if not answer and action.arguments:
-                        # Fallback: use first string value if "answer" key not found
                         for v in action.arguments.values():
                             if isinstance(v, str) and v:
                                 answer = v
                                 break
                     step.observation = "Final answer provided"
-                    step.action = action
                     context.add_step(step)
+                    context.current_state = AgentState.FINISHED
 
                     yield (AgentState.FINISHED, "Preparing final answer...")
 
@@ -571,13 +473,17 @@ Provide the best possible answer with the available information. If some aspects
                         answer=answer,
                         steps=context.steps,
                         success=True,
-                        metadata={"total_steps": step_count},
+                        metadata={
+                            "total_steps": step_count,
+                            "tools_used": [s.action.tool.value for s in context.steps if s.action],
+                        },
                     )
 
                 if action.tool == ToolName.ASK_CLARIFICATION:
-                    question = action.arguments.get("question", "")
-                    step.action = action
+                    question = action.arguments.get("question", "Could you clarify your question?")
+                    step.observation = f"Clarification requested: {question}"
                     context.add_step(step)
+                    context.current_state = AgentState.NEEDS_CLARIFICATION
 
                     yield (AgentState.NEEDS_CLARIFICATION, question)
 
@@ -588,51 +494,59 @@ Provide the best possible answer with the available information. If some aspects
                         success=False,
                         needs_clarification=True,
                         clarification_question=question,
+                        metadata={"total_steps": step_count},
                     )
 
-                # 3. ACT - Show which tool is being called
+                # 3. ACT
+                context.current_state = AgentState.ACTING
                 tool_args_preview = ", ".join(
                     f"{k}={v}" for k, v in list(action.arguments.items())[:2]
                 )
-                yield (AgentState.ACTING, f"Calling {action.tool.value}({tool_args_preview[:50]})")
+                yield (
+                    AgentState.ACTING,
+                    f"Calling {action.tool.value}({tool_args_preview[:50]})",
+                )
 
-                step.action = action
                 result = self.tools.execute(action)
                 step.observation = result.observation
 
-                # Show if result was cached
                 cached_indicator = " [cached]" if result.metadata.get("cached") else ""
 
-                # 4. OBSERVE - Show result summary
+                # 4. OBSERVE
                 obs_preview = (
                     step.observation[:120].replace("\n", " ") if step.observation else "No result"
                 )
                 yield (AgentState.OBSERVING, f"Result{cached_indicator}: {obs_preview}")
 
                 # 5. REFLECT (parallel) - Start reflection while storing context
+                context.current_state = AgentState.REFLECTING
                 reflection_future: Future = _reflection_executor.submit(
                     self._reflect, context, step.observation
                 )
 
-                # Store context (runs while reflection computes in parallel)
+                # Store useful context (runs while reflection computes in parallel)
                 if result.success and result.data:
                     if action.tool == ToolName.RETRIEVE_VECTOR:
                         for doc in result.data[:3]:
                             context.add_context(doc.get("text", ""))
                     elif action.tool == ToolName.RETRIEVE_GRAPH:
                         context.add_context(result.data.get("context", ""))
+                    elif action.tool == ToolName.LOOKUP_ENTITY:
+                        if result.data:
+                            context.entities_found.append(result.data)
+                    elif action.tool in (ToolName.SYNTHESIZE, ToolName.COMPARE_ENTITIES):
+                        context.add_context(str(result.data))
 
-                # Wait for reflection to complete
-                reflection = reflection_future.result(timeout=30.0)
-                step.reflection = reflection
+                # Wait for reflection to complete (usually already done by now)
+                step.reflection = reflection_future.result(timeout=30.0)
                 context.add_step(step)
 
-                # Show reflection (only if meaningful)
-                if reflection and len(reflection) > 10:
-                    refl_preview = reflection[:100].replace("\n", " ")
+                if step.reflection and len(step.reflection) > 10:
+                    refl_preview = step.reflection[:100].replace("\n", " ")
                     yield (AgentState.REFLECTING, f"Analysis: {refl_preview}")
 
-            # Max steps - force conclusion
+            # Max steps reached - force conclusion
+            logger.warning(f"Agent reached max_steps ({self.max_steps}), forcing conclusion")
             yield (AgentState.FINISHED, "Reaching conclusion...")
             final_answer = self._force_conclusion(context)
 
@@ -641,16 +555,22 @@ Provide the best possible answer with the available information. If some aspects
                 answer=final_answer,
                 steps=context.steps,
                 success=True,
-                metadata={"forced_conclusion": True},
+                metadata={
+                    "total_steps": step_count,
+                    "forced_conclusion": True,
+                    "tools_used": [s.action.tool.value for s in context.steps if s.action],
+                },
             )
 
         except Exception as e:
-            logger.error(f"Agent streaming error: {e}")
+            logger.error(f"Agent error: {e}", exc_info=True)
+            context.current_state = AgentState.ERROR
+
             yield (AgentState.ERROR, str(e))
 
             return AgentResult(
                 query=query,
-                answer=f"Error: {str(e)}",
+                answer=f"An error occurred while processing your query: {str(e)}",
                 steps=context.steps,
                 success=False,
                 error=str(e),
