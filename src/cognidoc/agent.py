@@ -55,17 +55,30 @@ class AgentStep:
 
     step_number: int
     thought: str = ""
-    action: Optional[ToolCall] = None
+    actions: List[ToolCall] = field(default_factory=list)
     observation: str = ""
     reflection: str = ""
+
+    @property
+    def action(self) -> Optional[ToolCall]:
+        """First action (backward compatibility)."""
+        return self.actions[0] if self.actions else None
+
+    @action.setter
+    def action(self, value: Optional[ToolCall]):
+        """Set single action (backward compatibility)."""
+        if value is not None:
+            self.actions = [value]
+        else:
+            self.actions = []
 
     def to_text(self) -> str:
         """Format step as text for context."""
         parts = [f"Step {self.step_number}:"]
         if self.thought:
             parts.append(f"Thought: {self.thought}")
-        if self.action:
-            parts.append(f"Action: {self.action.tool.value}({self.action.arguments})")
+        for act in self.actions:
+            parts.append(f"Action: {act.tool.value}({act.arguments})")
         if self.observation:
             parts.append(f"Observation: {self.observation[:500]}...")
         if self.reflection:
@@ -110,8 +123,8 @@ class AgentContext:
                 lines = [f"Step {step.step_number}:"]
                 if step.thought:
                     lines.append(f"Thought: {step.thought}")
-                if step.action:
-                    lines.append(f"Action: {step.action.tool.value}({step.action.arguments})")
+                for act in step.actions:
+                    lines.append(f"Action: {act.tool.value}({act.arguments})")
                 parts.append("\n".join(lines))
             else:
                 parts.append(step.to_text())
@@ -165,12 +178,23 @@ ACTION: <tool_name>
 ARGUMENTS: <JSON object>
 ```
 
+For parallel actions (e.g., comparing two things), use numbered format:
+```
+THOUGHT: <brief reasoning>
+ACTION_1: <tool_name>
+ARGUMENTS_1: <JSON object>
+ACTION_2: <tool_name>
+ARGUMENTS_2: <JSON object>
+```
+Use parallel actions ONLY for independent operations (e.g., retrieving info about X and Y separately). Do NOT use parallel actions for terminal actions (final_answer, ask_clarification).
+
 ## Efficiency Guidelines - CRITICAL
 1. **One retrieval is usually enough.** After ONE successful retrieve_vector or retrieve_graph call, you likely have enough information. Proceed to final_answer.
 2. **Skip synthesis for simple questions.** Use final_answer directly after getting relevant documents.
 3. **Use database_stats ONLY for meta-questions** about the database itself (document count, listing documents, etc.).
 4. **Avoid redundant lookups.** If retrieve_vector gave you info, don't also call retrieve_graph for the same question.
-5. **Target: 2-3 steps max for most queries.** Complex comparisons may need 4 steps.
+5. **Target: 2-3 steps max for most queries.** Complex comparisons may need 3 steps with parallel retrieval.
+6. **Use parallel actions for comparisons.** When comparing X and Y, retrieve both in parallel rather than sequentially.
 
 ## When to use each tool
 - `database_stats`: ONLY for "how many documents?", "list documents", etc.
@@ -282,12 +306,12 @@ class CogniDocAgent:
             result: AgentResult = e.value
             return result
 
-    def _think_and_decide(self, context: AgentContext) -> Tuple[str, Optional[ToolCall]]:
+    def _think_and_decide(self, context: AgentContext) -> Tuple[str, List[ToolCall]]:
         """
-        Think about the current state and decide on next action.
+        Think about the current state and decide on next action(s).
 
         Returns:
-            Tuple of (thought, action)
+            Tuple of (thought, actions) where actions may contain 1-2 tool calls.
         """
         # Build prompt
         if not context.steps:
@@ -317,8 +341,8 @@ class CogniDocAgent:
         )
 
         # Parse response
-        thought, action = self._parse_thought_action(response)
-        return thought, action
+        thought, actions = self._parse_thought_actions(response)
+        return thought, actions
 
     def _reflect(self, context: AgentContext, observation: str) -> Tuple[str, bool]:
         """
@@ -352,50 +376,75 @@ class CogniDocAgent:
 
         return response[:500], should_conclude
 
-    def _parse_thought_action(self, response: str) -> Tuple[str, Optional[ToolCall]]:
+    def _parse_thought_actions(self, response: str) -> Tuple[str, List[ToolCall]]:
         """
-        Parse LLM response to extract thought and action.
+        Parse LLM response to extract thought and action(s).
 
-        Expected format:
-        THOUGHT: ...
-        ACTION: tool_name
-        ARGUMENTS: {"key": "value"}
+        Supports two formats:
+        - Single: THOUGHT / ACTION / ARGUMENTS
+        - Parallel: THOUGHT / ACTION_1 / ARGUMENTS_1 / ACTION_2 / ARGUMENTS_2
         """
         thought = ""
-        action = None
+        actions: List[ToolCall] = []
 
         # Extract thought
         thought_match = re.search(
-            r"THOUGHT:\s*(.+?)(?=ACTION:|$)", response, re.DOTALL | re.IGNORECASE
+            r"THOUGHT:\s*(.+?)(?=ACTION|$)", response, re.DOTALL | re.IGNORECASE
         )
         if thought_match:
             thought = thought_match.group(1).strip()
 
-        # Extract action
-        action_match = re.search(r"ACTION:\s*(\w+)", response, re.IGNORECASE)
-        if action_match:
-            tool_name = action_match.group(1).lower()
-
-            # Map to ToolName enum
-            try:
-                tool = ToolName(tool_name)
-            except ValueError:
-                logger.warning(f"Unknown tool: {tool_name}")
-                return thought, None
-
-            # Extract arguments
-            args = {}
-            args_match = re.search(r"ARGUMENTS:\s*(\{.+?\})", response, re.DOTALL | re.IGNORECASE)
-            if args_match:
+        # Try numbered actions first: ACTION_1, ACTION_2
+        for i in range(1, 3):  # max 2 parallel actions
+            action_match = re.search(rf"ACTION_{i}:\s*(\w+)", response, re.IGNORECASE)
+            if action_match:
+                tool_name = action_match.group(1).lower()
                 try:
-                    args = json.loads(args_match.group(1))
-                except json.JSONDecodeError:
-                    # Try to extract key-value pairs manually
-                    args = self._parse_args_fallback(args_match.group(1))
+                    tool = ToolName(tool_name)
+                except ValueError:
+                    logger.warning(f"Unknown tool in parallel action {i}: {tool_name}")
+                    continue
+                args = {}
+                args_match = re.search(
+                    rf"ARGUMENTS_{i}:\s*(\{{.+?\}})", response, re.DOTALL | re.IGNORECASE
+                )
+                if args_match:
+                    try:
+                        args = json.loads(args_match.group(1))
+                    except json.JSONDecodeError:
+                        args = self._parse_args_fallback(args_match.group(1))
+                actions.append(ToolCall(tool=tool, arguments=args, reasoning=thought))
 
-            action = ToolCall(tool=tool, arguments=args, reasoning=thought)
+        # Filter out terminal actions from parallel responses
+        terminal_tools = {ToolName.FINAL_ANSWER, ToolName.ASK_CLARIFICATION}
+        if len(actions) > 1:
+            terminal = [a for a in actions if a.tool in terminal_tools]
+            if terminal:
+                # Terminal action found in parallel — keep only the terminal one
+                actions = [terminal[0]]
 
-        return thought, action
+        # Fallback to single ACTION: format
+        if not actions:
+            action_match = re.search(r"ACTION:\s*(\w+)", response, re.IGNORECASE)
+            if action_match:
+                tool_name = action_match.group(1).lower()
+                try:
+                    tool = ToolName(tool_name)
+                except ValueError:
+                    logger.warning(f"Unknown tool: {tool_name}")
+                    return thought, []
+                args = {}
+                args_match = re.search(
+                    r"ARGUMENTS:\s*(\{.+?\})", response, re.DOTALL | re.IGNORECASE
+                )
+                if args_match:
+                    try:
+                        args = json.loads(args_match.group(1))
+                    except json.JSONDecodeError:
+                        args = self._parse_args_fallback(args_match.group(1))
+                actions.append(ToolCall(tool=tool, arguments=args, reasoning=thought))
+
+        return thought, actions
 
     def _parse_args_fallback(self, args_str: str) -> Dict[str, str]:
         """Fallback argument parsing for malformed JSON."""
@@ -470,102 +519,134 @@ Provide the best possible answer with the available information. If some aspects
                     f"[Step {step_count}/{self.max_steps}] Analyzing query...",
                 )
 
-                thought, action = self._think_and_decide(context)
+                thought, actions = self._think_and_decide(context)
                 step.thought = thought
-                step.action = action
+                step.actions = actions
 
-                if action is None:
+                if not actions:
                     logger.warning(f"Step {step_count}: No action decided")
                     yield (AgentState.THINKING, "No action decided, finishing...")
                     break
 
-                logger.info(f"Step {step_count}: {action.tool.value}")
+                action_names = ", ".join(a.tool.value for a in actions)
+                logger.info(f"Step {step_count}: {action_names}")
 
                 thought_preview = thought[:150].replace("\n", " ") if thought else "..."
                 yield (AgentState.THINKING, f"Thought: {thought_preview}")
 
-                # 2. Check for terminal actions
-                if action.tool == ToolName.FINAL_ANSWER:
-                    answer = action.arguments.get("answer", "")
-                    if not answer and action.arguments:
-                        for v in action.arguments.values():
-                            if isinstance(v, str) and v:
-                                answer = v
-                                break
-                    step.observation = "Final answer provided"
-                    context.add_step(step)
-                    context.current_state = AgentState.FINISHED
+                # 2. Check for terminal actions (only valid as single action)
+                if len(actions) == 1:
+                    action = actions[0]
+                    if action.tool == ToolName.FINAL_ANSWER:
+                        answer = action.arguments.get("answer", "")
+                        if not answer and action.arguments:
+                            for v in action.arguments.values():
+                                if isinstance(v, str) and v:
+                                    answer = v
+                                    break
+                        step.observation = "Final answer provided"
+                        context.add_step(step)
+                        context.current_state = AgentState.FINISHED
 
-                    yield (AgentState.FINISHED, "Preparing final answer...")
+                        yield (AgentState.FINISHED, "Preparing final answer...")
 
-                    return AgentResult(
-                        query=query,
-                        answer=answer,
-                        steps=context.steps,
-                        success=True,
-                        metadata={
-                            "total_steps": step_count,
-                            "tools_used": [s.action.tool.value for s in context.steps if s.action],
-                        },
-                    )
+                        return AgentResult(
+                            query=query,
+                            answer=answer,
+                            steps=context.steps,
+                            success=True,
+                            metadata={
+                                "total_steps": step_count,
+                                "tools_used": list(
+                                    {a.tool.value for s in context.steps for a in s.actions}
+                                ),
+                            },
+                        )
 
-                if action.tool == ToolName.ASK_CLARIFICATION:
-                    question = action.arguments.get("question", "Could you clarify your question?")
-                    step.observation = f"Clarification requested: {question}"
-                    context.add_step(step)
-                    context.current_state = AgentState.NEEDS_CLARIFICATION
+                    if action.tool == ToolName.ASK_CLARIFICATION:
+                        question = action.arguments.get(
+                            "question", "Could you clarify your question?"
+                        )
+                        step.observation = f"Clarification requested: {question}"
+                        context.add_step(step)
+                        context.current_state = AgentState.NEEDS_CLARIFICATION
 
-                    yield (AgentState.NEEDS_CLARIFICATION, question)
+                        yield (AgentState.NEEDS_CLARIFICATION, question)
 
-                    return AgentResult(
-                        query=query,
-                        answer="",
-                        steps=context.steps,
-                        success=False,
-                        needs_clarification=True,
-                        clarification_question=question,
-                        metadata={"total_steps": step_count},
-                    )
+                        return AgentResult(
+                            query=query,
+                            answer="",
+                            steps=context.steps,
+                            success=False,
+                            needs_clarification=True,
+                            clarification_question=question,
+                            metadata={"total_steps": step_count},
+                        )
 
-                # 3. ACT
+                # 3. ACT — execute actions (parallel if multiple)
                 context.current_state = AgentState.ACTING
-                tool_args_preview = ", ".join(
-                    f"{k}={v}" for k, v in list(action.arguments.items())[:2]
-                )
-                yield (
-                    AgentState.ACTING,
-                    f"Calling {action.tool.value}({tool_args_preview[:50]})",
-                )
 
-                result = self.tools.execute(action)
-                step.observation = result.observation
+                if len(actions) == 1:
+                    # Single action
+                    action = actions[0]
+                    tool_args_preview = ", ".join(
+                        f"{k}={v}" for k, v in list(action.arguments.items())[:2]
+                    )
+                    yield (
+                        AgentState.ACTING,
+                        f"Calling {action.tool.value}({tool_args_preview[:50]})",
+                    )
+                    result = self.tools.execute(action)
+                    tool_results = [(action, result)]
+                else:
+                    # Parallel execution
+                    yield (
+                        AgentState.ACTING,
+                        f"Executing {len(actions)} actions in parallel: {action_names}",
+                    )
+                    futures = [
+                        (act, _reflection_executor.submit(self.tools.execute, act))
+                        for act in actions
+                    ]
+                    tool_results = [(act, fut.result(timeout=30.0)) for act, fut in futures]
 
-                cached_indicator = " [cached]" if result.metadata.get("cached") else ""
+                # Combine observations and store context
+                observations = []
+                for act, res in tool_results:
+                    obs_text = res.observation
+                    if len(tool_results) > 1:
+                        obs_text = f"[{act.tool.value}] {obs_text}"
+                    observations.append(obs_text)
+
+                    # Store useful context
+                    if res.success and res.data:
+                        if act.tool == ToolName.RETRIEVE_VECTOR:
+                            for doc in res.data[:3]:
+                                context.add_context(doc.get("text", ""))
+                        elif act.tool == ToolName.RETRIEVE_GRAPH:
+                            context.add_context(res.data.get("context", ""))
+                        elif act.tool == ToolName.LOOKUP_ENTITY:
+                            if res.data:
+                                context.entities_found.append(res.data)
+                        elif act.tool in (ToolName.SYNTHESIZE, ToolName.COMPARE_ENTITIES):
+                            context.add_context(str(res.data))
+
+                step.observation = "\n".join(observations)
 
                 # 4. OBSERVE
                 obs_preview = (
                     step.observation[:120].replace("\n", " ") if step.observation else "No result"
                 )
+                cached_indicator = ""
+                if len(tool_results) == 1 and tool_results[0][1].metadata.get("cached"):
+                    cached_indicator = " [cached]"
                 yield (AgentState.OBSERVING, f"Result{cached_indicator}: {obs_preview}")
 
-                # 5. REFLECT (parallel) - Start reflection while storing context
+                # 5. REFLECT (parallel) - Start reflection while context is fresh
                 context.current_state = AgentState.REFLECTING
                 reflection_future: Future = _reflection_executor.submit(
                     self._reflect, context, step.observation
                 )
-
-                # Store useful context (runs while reflection computes in parallel)
-                if result.success and result.data:
-                    if action.tool == ToolName.RETRIEVE_VECTOR:
-                        for doc in result.data[:3]:
-                            context.add_context(doc.get("text", ""))
-                    elif action.tool == ToolName.RETRIEVE_GRAPH:
-                        context.add_context(result.data.get("context", ""))
-                    elif action.tool == ToolName.LOOKUP_ENTITY:
-                        if result.data:
-                            context.entities_found.append(result.data)
-                    elif action.tool in (ToolName.SYNTHESIZE, ToolName.COMPARE_ENTITIES):
-                        context.add_context(str(result.data))
 
                 # Wait for reflection to complete (usually already done by now)
                 step.reflection, should_conclude = reflection_future.result(timeout=30.0)
@@ -588,7 +669,10 @@ Provide the best possible answer with the available information. If some aspects
                         metadata={
                             "total_steps": step_count,
                             "reflection_concluded": True,
-                            "tools_used": [s.action.tool.value for s in context.steps if s.action],
+                            "tools_used": list(
+                                {a.tool.value for s in context.steps for a in s.actions}
+                            ),
+                            "parallel_steps": sum(1 for s in context.steps if len(s.actions) > 1),
                         },
                     )
 
@@ -605,7 +689,8 @@ Provide the best possible answer with the available information. If some aspects
                 metadata={
                     "total_steps": step_count,
                     "forced_conclusion": True,
-                    "tools_used": [s.action.tool.value for s in context.steps if s.action],
+                    "tools_used": list({a.tool.value for s in context.steps for a in s.actions}),
+                    "parallel_steps": sum(1 for s in context.steps if len(s.actions) > 1),
                 },
             )
 

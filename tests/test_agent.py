@@ -57,7 +57,7 @@ class TestAgentStep:
         step = AgentStep(
             step_number=2,
             thought="Searching...",
-            action=action,
+            actions=[action],
             observation="Results found",
         )
         assert step.action.tool == ToolName.RETRIEVE_VECTOR
@@ -85,7 +85,7 @@ class TestAgentStep:
         step = AgentStep(
             step_number=1,
             thought="Looking up entity",
-            action=action,
+            actions=[action],
         )
         text = step.to_text()
         assert "Action:" in text
@@ -242,12 +242,12 @@ class TestCogniDocAgent:
 ACTION: retrieve_vector
 ARGUMENTS: {"query": "what is X", "top_k": "5"}"""
 
-        thought, action = agent._parse_thought_action(response)
+        thought, actions = agent._parse_thought_actions(response)
 
         assert "search for documents" in thought
-        assert action is not None
-        assert action.tool == ToolName.RETRIEVE_VECTOR
-        assert action.arguments["query"] == "what is X"
+        assert len(actions) == 1
+        assert actions[0].tool == ToolName.RETRIEVE_VECTOR
+        assert actions[0].arguments["query"] == "what is X"
 
     @patch("cognidoc.agent.llm_chat")
     def test_parse_final_answer(self, mock_llm):
@@ -259,10 +259,10 @@ ARGUMENTS: {"query": "what is X", "top_k": "5"}"""
 ACTION: final_answer
 ARGUMENTS: {"answer": "The answer is 42."}"""
 
-        thought, action = agent._parse_thought_action(response)
+        thought, actions = agent._parse_thought_actions(response)
 
-        assert action.tool == ToolName.FINAL_ANSWER
-        assert action.arguments["answer"] == "The answer is 42."
+        assert actions[0].tool == ToolName.FINAL_ANSWER
+        assert actions[0].arguments["answer"] == "The answer is 42."
 
     @patch("cognidoc.agent.llm_chat")
     def test_parse_malformed_response(self, mock_llm):
@@ -272,10 +272,10 @@ ARGUMENTS: {"answer": "The answer is 42."}"""
 
         response = "I don't know what to do"
 
-        thought, action = agent._parse_thought_action(response)
+        thought, actions = agent._parse_thought_actions(response)
 
         assert thought == ""
-        assert action is None
+        assert len(actions) == 0
 
     @patch("cognidoc.agent.llm_chat")
     def test_run_simple_query(self, mock_llm):
@@ -412,7 +412,7 @@ class TestContextTrimming:
         return AgentStep(
             step_number=num,
             thought=thought,
-            action=action,
+            actions=[action],
             observation=observation,
             reflection=reflection,
         )
@@ -610,6 +610,210 @@ ARGUMENTS: {"answer": "The answer."}"""
 
         assert result.success is True
         assert result.metadata.get("reflection_concluded") is not True
+
+
+class TestParallelToolExecution:
+    """Tests for parallel tool execution (ACTION_1/ACTION_2 format)."""
+
+    @patch("cognidoc.agent.llm_chat")
+    def test_parse_numbered_actions(self, mock_llm):
+        """Numbered ACTION_1/ACTION_2 format produces two ToolCalls."""
+        mock_retriever = MagicMock()
+        agent = CogniDocAgent(retriever=mock_retriever)
+
+        response = """THOUGHT: I need to compare X and Y, let me retrieve both.
+ACTION_1: retrieve_vector
+ARGUMENTS_1: {"query": "X features", "top_k": "3"}
+ACTION_2: retrieve_vector
+ARGUMENTS_2: {"query": "Y features", "top_k": "3"}"""
+
+        thought, actions = agent._parse_thought_actions(response)
+
+        assert "compare" in thought.lower()
+        assert len(actions) == 2
+        assert actions[0].tool == ToolName.RETRIEVE_VECTOR
+        assert actions[0].arguments["query"] == "X features"
+        assert actions[1].tool == ToolName.RETRIEVE_VECTOR
+        assert actions[1].arguments["query"] == "Y features"
+
+    @patch("cognidoc.agent.llm_chat")
+    def test_parse_falls_back_to_single_format(self, mock_llm):
+        """Single ACTION: format still works as fallback."""
+        mock_retriever = MagicMock()
+        agent = CogniDocAgent(retriever=mock_retriever)
+
+        response = """THOUGHT: Simple query.
+ACTION: retrieve_vector
+ARGUMENTS: {"query": "test"}"""
+
+        thought, actions = agent._parse_thought_actions(response)
+
+        assert len(actions) == 1
+        assert actions[0].tool == ToolName.RETRIEVE_VECTOR
+
+    @patch("cognidoc.agent.llm_chat")
+    def test_terminal_action_filtered_from_parallel(self, mock_llm):
+        """Terminal action in parallel response is kept alone."""
+        mock_retriever = MagicMock()
+        agent = CogniDocAgent(retriever=mock_retriever)
+
+        response = """THOUGHT: Let me get info and answer.
+ACTION_1: retrieve_vector
+ARGUMENTS_1: {"query": "test"}
+ACTION_2: final_answer
+ARGUMENTS_2: {"answer": "The answer."}"""
+
+        thought, actions = agent._parse_thought_actions(response)
+
+        # Only the terminal action should survive
+        assert len(actions) == 1
+        assert actions[0].tool == ToolName.FINAL_ANSWER
+
+    @patch("cognidoc.agent.llm_chat")
+    def test_parse_mixed_tools_parallel(self, mock_llm):
+        """Parallel actions can use different tools."""
+        mock_retriever = MagicMock()
+        agent = CogniDocAgent(retriever=mock_retriever)
+
+        response = """THOUGHT: Need vector and graph info.
+ACTION_1: retrieve_vector
+ARGUMENTS_1: {"query": "topic A"}
+ACTION_2: retrieve_graph
+ARGUMENTS_2: {"query": "topic A relationships"}"""
+
+        thought, actions = agent._parse_thought_actions(response)
+
+        assert len(actions) == 2
+        assert actions[0].tool == ToolName.RETRIEVE_VECTOR
+        assert actions[1].tool == ToolName.RETRIEVE_GRAPH
+
+    def test_agent_step_actions_list(self):
+        """AgentStep stores multiple actions via actions list."""
+        a1 = ToolCall(tool=ToolName.RETRIEVE_VECTOR, arguments={"query": "X"})
+        a2 = ToolCall(tool=ToolName.RETRIEVE_VECTOR, arguments={"query": "Y"})
+
+        step = AgentStep(step_number=1, thought="Comparing", actions=[a1, a2])
+
+        assert len(step.actions) == 2
+        assert step.action == a1  # backward compat returns first
+
+    def test_agent_step_action_setter_compat(self):
+        """Setting step.action (singular) wraps into actions list."""
+        action = ToolCall(tool=ToolName.LOOKUP_ENTITY, arguments={"entity_name": "X"})
+        step = AgentStep(step_number=1)
+        step.action = action
+
+        assert len(step.actions) == 1
+        assert step.actions[0] == action
+
+    def test_agent_step_to_text_multiple_actions(self):
+        """to_text shows all actions."""
+        a1 = ToolCall(tool=ToolName.RETRIEVE_VECTOR, arguments={"query": "X"})
+        a2 = ToolCall(tool=ToolName.RETRIEVE_GRAPH, arguments={"query": "X rels"})
+
+        step = AgentStep(
+            step_number=1,
+            thought="Parallel retrieval",
+            actions=[a1, a2],
+            observation="Results from both",
+        )
+        text = step.to_text()
+
+        assert "retrieve_vector" in text
+        assert "retrieve_graph" in text
+        assert text.count("Action:") == 2
+
+    def test_trimmed_history_shows_all_actions(self):
+        """get_trimmed_history shows all actions for trimmed (older) steps."""
+        a1 = ToolCall(tool=ToolName.RETRIEVE_VECTOR, arguments={"query": "X"})
+        a2 = ToolCall(tool=ToolName.RETRIEVE_VECTOR, arguments={"query": "Y"})
+
+        step_old = AgentStep(
+            step_number=1,
+            thought="Parallel step",
+            actions=[a1, a2],
+            observation="Long observation " * 100,
+            reflection="Long reflection " * 50,
+        )
+        step_new = AgentStep(
+            step_number=2,
+            thought="Final",
+            observation="Result",
+        )
+
+        context = AgentContext(query="test")
+        context.add_step(step_old)
+        context.add_step(step_new)
+
+        result = context.get_trimmed_history(keep_full=1)
+
+        # Trimmed step 1 should show both actions
+        step1_block = result.split("Step 2:")[0]
+        assert step1_block.count("Action:") == 2
+        assert "Observation:" not in step1_block
+
+    @patch("cognidoc.agent.llm_chat")
+    def test_parallel_execution_integration(self, mock_llm):
+        """Full agent run with parallel actions produces combined observation."""
+        mock_retriever = MagicMock()
+        mock_retriever._graph_retriever = None
+        mock_retriever.is_loaded.return_value = True
+
+        mock_node = MagicMock()
+        mock_node.text = "Info about topic"
+        mock_node.metadata = {}
+        mock_nws = MagicMock()
+        mock_nws.node = mock_node
+        mock_nws.score = 0.9
+        mock_retriever._vector_index.search.return_value = [mock_nws]
+
+        agent = CogniDocAgent(retriever=mock_retriever, max_steps=3)
+
+        call_count = [0]
+
+        def mock_response(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # Think: parallel retrieval
+                return """THOUGHT: Compare X and Y, retrieve both.
+ACTION_1: retrieve_vector
+ARGUMENTS_1: {"query": "X", "top_k": "3"}
+ACTION_2: retrieve_vector
+ARGUMENTS_2: {"query": "Y", "top_k": "3"}"""
+            elif call_count[0] == 2:
+                # Reflect: conclude
+                return "THOUGHT: Have both results.\nACTION: final_answer"
+            else:
+                # Force conclusion
+                return "X and Y are both interesting."
+
+        mock_llm.side_effect = mock_response
+
+        result = agent.run("Compare X and Y")
+
+        assert result.success is True
+        assert result.metadata.get("parallel_steps", 0) >= 1
+        # Step 1 should have 2 actions
+        assert len(result.steps[0].actions) == 2
+
+    @patch("cognidoc.agent.llm_chat")
+    def test_metadata_tracks_parallel_steps(self, mock_llm):
+        """Metadata includes parallel_steps count."""
+        mock_retriever = MagicMock()
+        mock_retriever._graph_retriever = None
+        mock_retriever.is_loaded.return_value = True
+
+        agent = CogniDocAgent(retriever=mock_retriever, max_steps=3)
+
+        # Direct final answer → 0 parallel steps
+        mock_llm.return_value = """THOUGHT: I know the answer.
+ACTION: final_answer
+ARGUMENTS: {"answer": "42"}"""
+
+        result = agent.run("Simple question")
+
+        assert result.metadata.get("parallel_steps") is None  # Not in final_answer path
+        assert "tools_used" in result.metadata
 
 
 class TestAgentIntegration:
