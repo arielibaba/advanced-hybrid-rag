@@ -404,7 +404,7 @@ def _parse_json_response(response: str) -> Optional[Dict[str, Any]]:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        pass
+        logger.debug("JSON decode failed, trying json_repair fallback")
 
     # Try json_repair if available
     try:
@@ -413,8 +413,8 @@ def _parse_json_response(response: str) -> Optional[Dict[str, Any]]:
         repaired = repair_json(text, return_objects=True)
         if isinstance(repaired, dict):
             return repaired
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"json_repair fallback failed: {e}")
 
     return None
 

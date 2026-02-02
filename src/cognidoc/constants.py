@@ -466,6 +466,17 @@ ENABLE_RERANKING = os.getenv("ENABLE_RERANKING", "true").lower() == "true"
 MAX_SOURCE_CHUNKS_PER_ENTITY = int(os.getenv("MAX_SOURCE_CHUNKS_PER_ENTITY", "20"))
 MAX_SOURCE_CHUNKS_FROM_GRAPH = int(os.getenv("MAX_SOURCE_CHUNKS_FROM_GRAPH", "100"))
 
+# Retrieval cache settings
+RETRIEVAL_CACHE_MAX_SIZE = int(os.getenv("RETRIEVAL_CACHE_MAX_SIZE", "50"))
+RETRIEVAL_CACHE_TTL = int(os.getenv("RETRIEVAL_CACHE_TTL", "300"))  # seconds
+# Cosine similarity threshold for semantic cache matching (0.0-1.0)
+RETRIEVAL_CACHE_SIMILARITY_THRESHOLD = float(
+    os.getenv("RETRIEVAL_CACHE_SIMILARITY_THRESHOLD", "0.92")
+)
+
+# Louvain community detection resolution (higher = more/smaller communities)
+COMMUNITY_RESOLUTION = float(os.getenv("COMMUNITY_RESOLUTION", "1.0"))
+
 # =============================================================================
 # Advanced RAG Configuration
 # =============================================================================
@@ -589,8 +600,10 @@ EMBEDDINGS_DIR = str(EMBEDDINGS_DIR.resolve())
 VECTOR_STORE_DIR = str(VECTOR_STORE_DIR.resolve())
 INDEX_DIR = str(INDEX_DIR.resolve())
 INGESTION_MANIFEST_PATH = str(INGESTION_MANIFEST_PATH.resolve())
+INGESTION_STATS_PATH = str(INGESTION_STATS_PATH.resolve())
 CACHE_DIR = str(CACHE_DIR.resolve())
 TOOL_CACHE_DB = str(TOOL_CACHE_DB.resolve())
+RETRIEVAL_CACHE_DB = str(RETRIEVAL_CACHE_DB.resolve())
 METRICS_DB = str(METRICS_DB.resolve())
 CHECKPOINT_FILE = str(CHECKPOINT_FILE.resolve())
 ENTITY_RESOLUTION_PROMPT = str(ENTITY_RESOLUTION_PROMPT.resolve())

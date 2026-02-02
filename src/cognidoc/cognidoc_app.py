@@ -1416,6 +1416,10 @@ def chat_conversation(
         # Normalize to NFC to ensure consistent Unicode representation
         # (macOS often uses NFD, but URLs and most systems expect NFC)
         doc_normalized = unicodedata.normalize("NFC", doc)
+        # Prevent path traversal: reject document names containing ".."
+        if ".." in doc_normalized:
+            logger.warning(f"Skipping document with path traversal attempt: {doc}")
+            continue
         pdf_filename = f"{doc_normalized}.pdf"
         # Use safe='/' to preserve path separators in the URL
         encoded_filename = urllib.parse.quote(pdf_filename, safe="/")

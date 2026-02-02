@@ -100,6 +100,13 @@ def cmd_ingest(args) -> None:
         print(f"\nStatus: {status}")
         return
 
+    # Validate paths: reject directory traversal attempts
+    source_path = Path(args.source).resolve()
+    data_path = Path(args.data_dir).resolve() if args.data_dir else None
+    if ".." in str(args.source) or (args.data_dir and ".." in str(args.data_dir)):
+        print("[ERROR] Path contains '..', which is not allowed.", file=sys.stderr)
+        sys.exit(1)
+
     # Validate environment before heavy imports
     issues = validate_environment(
         args.llm, args.embedding, check_data_dir=True, data_dir=args.data_dir

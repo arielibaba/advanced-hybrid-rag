@@ -33,7 +33,7 @@ from .utils.logger import logger
 
 # Thread pool for parallel reflection (reused across agent calls)
 _reflection_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="agent_reflect")
-atexit.register(_reflection_executor.shutdown, wait=False)
+atexit.register(lambda: _reflection_executor.shutdown(wait=True, cancel_futures=True))
 
 if TYPE_CHECKING:
     from .hybrid_retriever import HybridRetriever

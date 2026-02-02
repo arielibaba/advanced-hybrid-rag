@@ -14,7 +14,6 @@ Provides:
 import hashlib
 import json
 import math
-import pickle
 import re
 import sqlite3
 import threading
@@ -57,6 +56,9 @@ from .constants import (
     COMPRESSION_MAX_TOKENS_PER_DOC,
     MAX_SOURCE_CHUNKS_PER_ENTITY,
     MAX_SOURCE_CHUNKS_FROM_GRAPH,
+    RETRIEVAL_CACHE_MAX_SIZE,
+    RETRIEVAL_CACHE_TTL,
+    RETRIEVAL_CACHE_SIMILARITY_THRESHOLD,
 )
 from .utils.rag_utils import (
     VectorIndex,
@@ -97,8 +99,6 @@ class RetrievalCache:
     - TTL expiration and LRU eviction
     """
 
-    SIMILARITY_THRESHOLD = 0.92
-
     _instance: Optional["RetrievalCache"] = None
     _initialized: bool = False
     _lock: threading.Lock = threading.Lock()
@@ -113,8 +113,8 @@ class RetrievalCache:
     def __init__(
         self,
         db_path: Optional[str] = None,
-        max_size: int = 50,
-        ttl_seconds: int = 300,
+        max_size: int = RETRIEVAL_CACHE_MAX_SIZE,
+        ttl_seconds: int = RETRIEVAL_CACHE_TTL,
     ):
         if self._initialized:
             return
@@ -210,7 +210,7 @@ class RetrievalCache:
                     self._hits += 1
                     elapsed = now - row[1]
                     logger.debug(f"Retrieval cache HIT exact (age={elapsed:.1f}s)")
-                    return pickle.loads(row[0])
+                    return HybridRetrievalResult.from_dict(json.loads(row[0]))
 
                 # Step 2: semantic similarity match
                 query_emb = self._get_query_embedding(query)
@@ -228,20 +228,23 @@ class RetrievalCache:
                     for emb_blob, result_blob, created_at in rows:
                         if emb_blob is None:
                             continue
-                        stored_emb = pickle.loads(emb_blob)
+                        stored_emb = json.loads(emb_blob)
                         sim = self._cosine_similarity(query_emb, stored_emb)
                         if sim > best_score:
                             best_score = sim
                             best_result = result_blob
                             best_age = now - created_at
 
-                    if best_score >= self.SIMILARITY_THRESHOLD and best_result is not None:
+                    if (
+                        best_score >= RETRIEVAL_CACHE_SIMILARITY_THRESHOLD
+                        and best_result is not None
+                    ):
                         self._hits += 1
                         logger.debug(
                             f"Retrieval cache HIT semantic "
                             f"(sim={best_score:.3f}, age={best_age:.1f}s)"
                         )
-                        return pickle.loads(best_result)
+                        return HybridRetrievalResult.from_dict(json.loads(best_result))
 
         except Exception:
             logger.debug("Retrieval cache get() error, treating as miss", exc_info=True)
@@ -263,8 +266,8 @@ class RetrievalCache:
         query_emb = self._get_query_embedding(query)
 
         try:
-            result_blob = pickle.dumps(result)
-            emb_blob = pickle.dumps(query_emb) if query_emb is not None else None
+            result_blob = json.dumps(result.to_dict())
+            emb_blob = json.dumps(query_emb) if query_emb is not None else None
 
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
@@ -370,6 +373,83 @@ class HybridRetrievalResult:
     fused_context: str = ""
     source_chunks: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to JSON-safe dict for cache storage."""
+        return {
+            "query": self.query,
+            "query_analysis": {
+                "query": self.query_analysis.query,
+                "query_type": self.query_analysis.query_type.value,
+                "entities_mentioned": self.query_analysis.entities_mentioned,
+                "relationship_keywords": self.query_analysis.relationship_keywords,
+                "use_vector": self.query_analysis.use_vector,
+                "use_graph": self.query_analysis.use_graph,
+                "vector_weight": self.query_analysis.vector_weight,
+                "graph_weight": self.query_analysis.graph_weight,
+                "confidence": self.query_analysis.confidence,
+            },
+            "vector_results": [
+                {"text": nws.node.text, "metadata": nws.node.metadata, "score": nws.score}
+                for nws in self.vector_results
+            ],
+            "graph_results": (
+                {
+                    "query": self.graph_results.query,
+                    "retrieval_type": self.graph_results.retrieval_type,
+                    "context": self.graph_results.context,
+                    "confidence": self.graph_results.confidence,
+                }
+                if self.graph_results
+                else None
+            ),
+            "fused_context": self.fused_context,
+            "source_chunks": self.source_chunks,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "HybridRetrievalResult":
+        """Deserialize from JSON-safe dict."""
+        qa_data = data["query_analysis"]
+        query_analysis = QueryAnalysis(
+            query=qa_data["query"],
+            query_type=QueryType(qa_data["query_type"]),
+            entities_mentioned=qa_data.get("entities_mentioned", []),
+            relationship_keywords=qa_data.get("relationship_keywords", []),
+            use_vector=qa_data.get("use_vector", True),
+            use_graph=qa_data.get("use_graph", True),
+            vector_weight=qa_data.get("vector_weight", 0.5),
+            graph_weight=qa_data.get("graph_weight", 0.5),
+            confidence=qa_data.get("confidence", 0.5),
+        )
+        vector_results = [
+            NodeWithScore(
+                node=Document(text=v["text"], metadata=v.get("metadata", {})),
+                score=v.get("score", 0.0),
+            )
+            for v in data.get("vector_results", [])
+        ]
+        gr_data = data.get("graph_results")
+        graph_results = (
+            GraphRetrievalResult(
+                query=gr_data["query"],
+                retrieval_type=gr_data["retrieval_type"],
+                context=gr_data.get("context", ""),
+                confidence=gr_data.get("confidence", 0.0),
+            )
+            if gr_data
+            else None
+        )
+        return cls(
+            query=data["query"],
+            query_analysis=query_analysis,
+            vector_results=vector_results,
+            graph_results=graph_results,
+            fused_context=data.get("fused_context", ""),
+            source_chunks=data.get("source_chunks", []),
+            metadata=data.get("metadata", {}),
+        )
 
 
 def analyze_query(
@@ -643,6 +723,14 @@ class HybridRetriever:
         self._keyword_index = None
         self._bm25_index = None
         self._graph_retriever = None
+
+    def __enter__(self) -> "HybridRetriever":
+        """Support usage as context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Ensure resources are released on context exit."""
+        self.close()
 
     def is_loaded(self) -> bool:
         """Check if at least vector index is loaded."""

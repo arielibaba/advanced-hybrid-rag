@@ -998,8 +998,8 @@ def _clear_query_caches():
         if _hybrid_retriever and _hybrid_retriever._graph_retriever:
             _hybrid_retriever._graph_retriever._cache.clear()
             logger.info("Graph retrieval cache cleared")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not clear graph retrieval cache: {e}")
     try:
         from .utils.rag_utils import clear_query_embedding_cache
 
@@ -1075,7 +1075,8 @@ def run_dry_run(source_dir: str = None) -> dict:
     # Check YOLO availability
     try:
         results["yolo_available"] = is_yolo_model_available()
-    except Exception:
+    except Exception as e:
+        logger.debug(f"YOLO availability check failed: {e}")
         results["yolo_available"] = False
 
     if not results["yolo_available"]:

@@ -6,7 +6,6 @@ Supports entity merging, community detection, and graph persistence.
 """
 
 import json
-import pickle
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -905,9 +904,10 @@ SUMMARY:"""
         save_path = Path(path)
         save_path.mkdir(parents=True, exist_ok=True)
 
-        # Save NetworkX graph using pickle (write_gpickle is deprecated)
-        with open(save_path / "graph.gpickle", "wb") as f:
-            pickle.dump(self.graph, f, pickle.HIGHEST_PROTOCOL)
+        # Save NetworkX graph as JSON (node_link format, safe serialization)
+        graph_data = nx.node_link_data(self.graph)
+        with open(save_path / "graph.json", "w", encoding="utf-8") as f:
+            json.dump(graph_data, f, ensure_ascii=False, indent=2)
 
         # Save nodes (including pre-computed embeddings and resolution data)
         nodes_data = {
@@ -963,11 +963,20 @@ SUMMARY:"""
 
         kg = cls(config)
 
-        # Load NetworkX graph using pickle (read_gpickle is deprecated)
-        graph_file = load_path / "graph.gpickle"
-        if graph_file.exists():
-            with open(graph_file, "rb") as f:
+        # Load NetworkX graph from JSON (node_link format)
+        graph_json = load_path / "graph.json"
+        graph_pickle = load_path / "graph.gpickle"  # Legacy fallback
+        if graph_json.exists():
+            with open(graph_json, "r", encoding="utf-8") as f:
+                graph_data = json.load(f)
+            kg.graph = nx.node_link_graph(graph_data)
+        elif graph_pickle.exists():
+            # Legacy pickle format — load but will be saved as JSON next time
+            import pickle
+
+            with open(graph_pickle, "rb") as f:
                 kg.graph = pickle.load(f)
+            logger.info("Loaded legacy pickle graph — will be saved as JSON on next save")
 
         # Load nodes
         nodes_file = load_path / "nodes.json"
@@ -1141,11 +1150,22 @@ def get_knowledge_graph_stats(path: str = None) -> Dict[str, int]:
         except Exception as e:
             logger.debug(f"Could not read communities.json: {e}")
 
-    # Count edges from graph pickle
-    graph_file = kg_path / "graph.gpickle"
-    if graph_file.exists():
+    # Count edges from graph JSON (with pickle fallback for legacy data)
+    graph_json = kg_path / "graph.json"
+    graph_pickle = kg_path / "graph.gpickle"
+    if graph_json.exists():
         try:
-            with open(graph_file, "rb") as f:
+            with open(graph_json, "r", encoding="utf-8") as f:
+                graph_data = json.load(f)
+            graph = nx.node_link_graph(graph_data)
+            stats["edges"] = graph.number_of_edges()
+        except Exception as e:
+            logger.debug(f"Could not read graph.json: {e}")
+    elif graph_pickle.exists():
+        try:
+            import pickle
+
+            with open(graph_pickle, "rb") as f:
                 graph = pickle.load(f)
             stats["edges"] = graph.number_of_edges()
         except Exception as e:

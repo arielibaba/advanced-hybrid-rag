@@ -47,8 +47,8 @@ def get_memory_window() -> int:
         if client.config.context_window:
             # Use 50% of the model's context window for conversation memory
             return int(client.config.context_window * 0.5)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not determine dynamic memory window: {e}")
     # Fallback to static constant
     return MEMORY_WINDOW
 

@@ -14,7 +14,6 @@ import asyncio
 import os
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import time
@@ -1307,18 +1306,6 @@ class TestLostInTheMiddleFusion:
 # =============================================================================
 
 
-@dataclass
-class _FakeCacheResult:
-    """Picklable stand-in for HybridRetrievalResult in cache tests."""
-
-    query: str = ""
-    fused_context: str = ""
-    vector_results: list = field(default_factory=list)
-    graph_results: object = None
-    source_chunks: list = field(default_factory=list)
-    metadata: dict = field(default_factory=dict)
-
-
 class TestPersistentRetrievalCache:
     """Tests for SQLite-backed retrieval cache with semantic similarity."""
 
@@ -1342,8 +1329,19 @@ class TestPersistentRetrievalCache:
         return RetrievalCache(db_path=db_path, **kwargs)
 
     def _make_result(self, query="test"):
-        """Create a minimal picklable HybridRetrievalResult-like object."""
-        return _FakeCacheResult(query=query, fused_context=f"Context for {query}")
+        """Create a HybridRetrievalResult with to_dict/from_dict for JSON cache."""
+        from cognidoc.hybrid_retriever import HybridRetrievalResult, QueryAnalysis
+        from cognidoc.query_orchestrator import QueryType
+
+        analysis = QueryAnalysis(
+            query=query, query_type=QueryType.FACTUAL, vector_weight=0.7, graph_weight=0.3
+        )
+        return HybridRetrievalResult(
+            query=query,
+            query_analysis=analysis,
+            fused_context=f"Context for {query}",
+            metadata={"from_cache": False},
+        )
 
     @patch("cognidoc.hybrid_retriever.RetrievalCache._get_query_embedding", return_value=None)
     def test_exact_match_hit(self, mock_emb, tmp_path):
