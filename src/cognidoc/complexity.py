@@ -13,6 +13,7 @@ Complexity signals:
 """
 
 import re
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
@@ -247,20 +248,27 @@ LOW_CONFIDENCE_THRESHOLD = 0.4
 
 
 _category_embeddings: Optional[Dict[str, List[List[float]]]] = None
+_category_embeddings_lock = threading.Lock()
 
 
 def _get_category_embeddings() -> Dict[str, List[List[float]]]:
-    """Lazily compute and cache category reference embeddings."""
+    """Lazily compute and cache category reference embeddings (thread-safe)."""
     global _category_embeddings
     if _category_embeddings is not None:
         return _category_embeddings
 
-    from .utils.rag_utils import get_embedding
+    with _category_embeddings_lock:
+        # Double-checked locking
+        if _category_embeddings is not None:
+            return _category_embeddings
 
-    _category_embeddings = {}
-    for category, phrases in COMPLEXITY_CATEGORIES.items():
-        _category_embeddings[category] = [get_embedding(p) for p in phrases]
-    return _category_embeddings
+        from .utils.rag_utils import get_embedding
+
+        result: Dict[str, List[List[float]]] = {}
+        for category, phrases in COMPLEXITY_CATEGORIES.items():
+            result[category] = [get_embedding(p) for p in phrases]
+        _category_embeddings = result
+        return _category_embeddings
 
 
 def _cosine_similarity(a: List[float], b: List[float]) -> float:

@@ -9,6 +9,7 @@ Provides smart routing between Vector RAG and GraphRAG based on:
 """
 
 import re
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -228,14 +229,18 @@ WEIGHT_CONFIG = {
 }
 
 _weights_loaded = False
+_weights_lock = threading.Lock()
 
 
 def _load_custom_weights():
-    """Load custom query weights from graph_schema.yaml if available."""
+    """Load custom query weights from graph_schema.yaml if available (thread-safe)."""
     global _weights_loaded, WEIGHT_CONFIG
     if _weights_loaded:
         return
-    _weights_loaded = True
+    with _weights_lock:
+        if _weights_loaded:
+            return
+        _weights_loaded = True
     try:
         config_path = Path("config/graph_schema.yaml")
         if not config_path.exists():

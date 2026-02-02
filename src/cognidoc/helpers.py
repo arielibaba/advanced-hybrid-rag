@@ -14,9 +14,12 @@ import markdown
 from bs4 import BeautifulSoup
 from httpx import ReadTimeout
 
-# Lazy tiktoken loading with caching
+# Lazy tiktoken loading with caching (thread-safe)
+import threading
+
 _tiktoken_encoding: Optional[Any] = None
 _tiktoken_available: Optional[bool] = None
+_tiktoken_lock = threading.Lock()
 
 if TYPE_CHECKING:
     import ollama
@@ -50,7 +53,7 @@ def get_memory_window() -> int:
     return MEMORY_WINDOW
 
 
-def clear_pytorch_cache():
+def clear_pytorch_cache() -> None:
     """Clears MPS cache in PyTorch if available."""
     try:
         import torch
@@ -62,7 +65,7 @@ def clear_pytorch_cache():
         pass
 
 
-def load_prompt(filepath):
+def load_prompt(filepath: str) -> str:
     """Load a prompt from a file."""
     with open(filepath, "r", encoding="utf-8") as f:
         return f.read()
@@ -204,16 +207,18 @@ def get_token_count(input_text: str) -> int:
     """
     global _tiktoken_encoding, _tiktoken_available
 
-    # Try tiktoken first
+    # Try tiktoken first (thread-safe initialization)
     if _tiktoken_available is None:
-        try:
-            import tiktoken
+        with _tiktoken_lock:
+            if _tiktoken_available is None:
+                try:
+                    import tiktoken
 
-            _tiktoken_encoding = tiktoken.get_encoding("cl100k_base")
-            _tiktoken_available = True
-        except Exception as e:
-            logger.warning(f"tiktoken unavailable, using word-based estimation: {e}")
-            _tiktoken_available = False
+                    _tiktoken_encoding = tiktoken.get_encoding("cl100k_base")
+                    _tiktoken_available = True
+                except Exception as e:
+                    logger.warning(f"tiktoken unavailable, using word-based estimation: {e}")
+                    _tiktoken_available = False
 
     if _tiktoken_available and _tiktoken_encoding is not None:
         return len(_tiktoken_encoding.encode(input_text))
@@ -463,7 +468,7 @@ def convert_history_to_tuples(history: List[dict]) -> List[dict]:
     return [{"role": msg["role"], "content": msg["content"]} for msg in history]
 
 
-def reset_conversation():
+def reset_conversation() -> Tuple[List, str]:
     """Resets the conversation history."""
     return [], ""
 

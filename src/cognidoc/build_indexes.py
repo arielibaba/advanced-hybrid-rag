@@ -17,6 +17,8 @@ from .constants import (
     PARENT_DOCUMENTS_INDEX,
     EMBED_MODEL,
 )
+from typing import List, Tuple
+
 from .utils.rag_utils import Document, VectorIndex, KeywordIndex
 from .utils.logger import logger
 
@@ -25,7 +27,7 @@ def load_embeddings_with_documents(
     embeddings_dir: str,
     chunks_dir: str,
     docs_dir: str,
-):
+) -> Tuple[List[List[float]], List[Document], List[Document]]:
     """
     Load embeddings and associated documents from disk.
 
@@ -92,7 +94,7 @@ def load_embeddings_with_documents(
     return embeddings, child_docs, parent_docs
 
 
-def build_indexes(recreate: bool = False):
+def build_indexes(recreate: bool = False) -> None:
     """
     Build child (vector) and parent (keyword) indexes.
 

@@ -313,8 +313,8 @@ class RetrievalCache:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 size = conn.execute("SELECT COUNT(*) FROM retrieval_cache").fetchone()[0]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Retrieval cache stats() error: {e}")
         return {
             "size": size,
             "max_size": self.max_size,

@@ -2005,3 +2005,81 @@ class TestApiSaveLoadDeprecation:
                 assert isinstance(instance, CogniDoc)
                 assert len(w) == 1
                 assert issubclass(w[0].category, DeprecationWarning)
+
+
+# =============================================================================
+# CogniDocConfig Validation Tests
+# =============================================================================
+
+
+class TestCogniDocConfigValidation:
+    """Tests for CogniDocConfig.__post_init__() validation."""
+
+    def test_valid_config(self):
+        from cognidoc.api import CogniDocConfig
+
+        config = CogniDocConfig(llm_provider="gemini", embedding_provider="ollama")
+        assert config.llm_provider == "gemini"
+
+    def test_invalid_llm_provider(self):
+        from cognidoc.api import CogniDocConfig
+
+        with pytest.raises(ValueError, match="Invalid llm_provider"):
+            CogniDocConfig(llm_provider="invalid_provider")
+
+    def test_invalid_embedding_provider(self):
+        from cognidoc.api import CogniDocConfig
+
+        with pytest.raises(ValueError, match="Invalid embedding_provider"):
+            CogniDocConfig(embedding_provider="foobar")
+
+    def test_top_k_must_be_positive(self):
+        from cognidoc.api import CogniDocConfig
+
+        with pytest.raises(ValueError, match="top_k must be >= 1"):
+            CogniDocConfig(top_k=0)
+
+    def test_rerank_top_k_must_be_positive(self):
+        from cognidoc.api import CogniDocConfig
+
+        with pytest.raises(ValueError, match="rerank_top_k must be >= 1"):
+            CogniDocConfig(rerank_top_k=-1)
+
+    def test_dense_weight_range(self):
+        from cognidoc.api import CogniDocConfig
+
+        with pytest.raises(ValueError, match="dense_weight must be between"):
+            CogniDocConfig(dense_weight=1.5)
+        with pytest.raises(ValueError, match="dense_weight must be between"):
+            CogniDocConfig(dense_weight=-0.1)
+
+    def test_max_chunk_size_must_be_positive(self):
+        from cognidoc.api import CogniDocConfig
+
+        with pytest.raises(ValueError, match="max_chunk_size must be >= 1"):
+            CogniDocConfig(max_chunk_size=0)
+
+    def test_chunk_overlap_must_be_nonnegative(self):
+        from cognidoc.api import CogniDocConfig
+
+        with pytest.raises(ValueError, match="chunk_overlap must be >= 0"):
+            CogniDocConfig(chunk_overlap=-1)
+
+    def test_chunk_overlap_less_than_chunk_size(self):
+        from cognidoc.api import CogniDocConfig
+
+        with pytest.raises(ValueError, match="chunk_overlap.*must be less than"):
+            CogniDocConfig(max_chunk_size=100, chunk_overlap=100)
+
+    def test_boundary_values_accepted(self):
+        from cognidoc.api import CogniDocConfig
+
+        config = CogniDocConfig(
+            top_k=1,
+            rerank_top_k=1,
+            dense_weight=0.0,
+            max_chunk_size=1,
+            chunk_overlap=0,
+        )
+        assert config.top_k == 1
+        assert config.dense_weight == 0.0

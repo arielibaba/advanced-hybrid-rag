@@ -67,7 +67,7 @@ def validate_environment(
     return issues
 
 
-def cmd_ingest(args):
+def cmd_ingest(args) -> None:
     """Handle the ingest command."""
     # Handle dry-run mode
     if args.dry_run:
@@ -143,7 +143,7 @@ def cmd_ingest(args):
             print(f"  - {error}")
 
 
-def cmd_query(args):
+def cmd_query(args) -> None:
     """Handle the query command."""
     issues = validate_environment(
         args.llm, args.embedding, check_data_dir=True, data_dir=args.data_dir
@@ -172,7 +172,7 @@ def cmd_query(args):
             print(f"  [{i}] {source['source']}{page}")
 
 
-def cmd_serve(args):
+def cmd_serve(args) -> None:
     """Handle the serve command."""
     issues = validate_environment(args.llm, args.embedding)
     for issue in issues:
@@ -200,7 +200,7 @@ def cmd_serve(args):
     )
 
 
-def cmd_init(args):
+def cmd_init(args) -> None:
     """Handle the init command."""
     import shutil
 
@@ -248,7 +248,7 @@ def cmd_init(args):
     print("  4. Run: cognidoc serve")
 
 
-def _create_default_schema(path: Path):
+def _create_default_schema(path: Path) -> None:
     """Create a default graph schema file."""
     schema = """# CogniDoc Graph Schema
 # Customize entity and relationship types for your domain
@@ -294,7 +294,7 @@ graph_settings:
     path.write_text(schema)
 
 
-def _create_env_template(path: Path):
+def _create_env_template(path: Path) -> None:
     """Create a .env template file."""
     template = """# CogniDoc Configuration
 
@@ -319,7 +319,7 @@ LLM_TOP_P=0.85
     path.write_text(template)
 
 
-def cmd_schema_generate(args):
+def cmd_schema_generate(args) -> None:
     """Handle the schema-generate command."""
     from .schema_wizard import (
         check_existing_schema,
@@ -359,7 +359,7 @@ def cmd_schema_generate(args):
     print(f"  Relationship types: {len(schema.get('relationships', []))}")
 
 
-def cmd_stats(args):
+def cmd_stats(args) -> None:
     """Handle the stats command - show ingestion history."""
     import json
 
@@ -413,7 +413,7 @@ def cmd_stats(args):
         print(f"\nRaw JSON at: {path}")
 
 
-def cmd_info(args):
+def cmd_info(args) -> None:
     """Handle the info command."""
     from .api import CogniDoc
     from .utils.embedding_providers import get_available_embedding_providers
@@ -447,7 +447,7 @@ def cmd_info(args):
             print(f"  Indexes: not built (run cognidoc ingest)")
 
 
-def main():
+def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description="CogniDoc - Hybrid RAG Document Assistant",

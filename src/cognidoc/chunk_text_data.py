@@ -383,7 +383,7 @@ def chunk_text_data(
     sentence_split_regex: str,
     verbose: bool,
     file_filter: Optional[list] = None,
-):
+) -> None:
     """
     Performs txt documents chunking using semantic chunking.
     Stores the resulting chunks into a dedicated folder.

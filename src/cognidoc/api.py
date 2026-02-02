@@ -74,7 +74,36 @@ class CogniDocConfig:
     chunk_overlap: int = 50
 
     def __post_init__(self):
-        """Apply smart defaults based on provider selection."""
+        """Apply smart defaults and validate parameters."""
+        # --- Validation ---
+        valid_providers = {"gemini", "openai", "anthropic", "ollama"}
+        if self.llm_provider not in valid_providers:
+            raise ValueError(
+                f"Invalid llm_provider '{self.llm_provider}'. "
+                f"Must be one of: {', '.join(sorted(valid_providers))}"
+            )
+        if self.embedding_provider not in valid_providers:
+            raise ValueError(
+                f"Invalid embedding_provider '{self.embedding_provider}'. "
+                f"Must be one of: {', '.join(sorted(valid_providers))}"
+            )
+        if self.top_k < 1:
+            raise ValueError(f"top_k must be >= 1, got {self.top_k}")
+        if self.rerank_top_k < 1:
+            raise ValueError(f"rerank_top_k must be >= 1, got {self.rerank_top_k}")
+        if not 0.0 <= self.dense_weight <= 1.0:
+            raise ValueError(f"dense_weight must be between 0.0 and 1.0, got {self.dense_weight}")
+        if self.max_chunk_size < 1:
+            raise ValueError(f"max_chunk_size must be >= 1, got {self.max_chunk_size}")
+        if self.chunk_overlap < 0:
+            raise ValueError(f"chunk_overlap must be >= 0, got {self.chunk_overlap}")
+        if self.chunk_overlap >= self.max_chunk_size:
+            raise ValueError(
+                f"chunk_overlap ({self.chunk_overlap}) must be less than "
+                f"max_chunk_size ({self.max_chunk_size})"
+            )
+
+        # --- Smart defaults ---
         # Default LLM model
         if self.llm_model is None:
             self.llm_model = DEFAULT_LLM_MODELS.get(self.llm_provider, "gemini-3-flash-preview")

@@ -16,7 +16,7 @@ import shutil
 import subprocess
 import platform
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import Any, List, Dict, Tuple, Optional
 
 from .utils.logger import logger
 
@@ -387,7 +387,7 @@ def process_source_documents(
     pdf_output_dir: str,
     image_output_dir: str = None,
     source_files: List[str] = None,
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     Process documents from sources directory.
 
