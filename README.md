@@ -679,6 +679,9 @@ pytest tests/test_00_e2e_pipeline.py -v --run-slow
 | `test_pipeline_stages.py` | 22 | Individual pipeline stage unit tests |
 | `test_providers.py` | 32 | LLM/Embedding providers |
 | `test_query_orchestrator.py` | 31 | Query classification, routing, weight config |
+| `test_api.py` | 12 | CogniDoc public API, config validation, deprecation |
+| `test_extract_entities.py` | 21 | Entity/relationship extraction, JSON parsing |
+| `test_graph_retrieval.py` | 16 | Graph retrieval cache, retriever, result dataclass |
 | `test_schema_generation.py` | 75 | Corpus-based schema generation |
 
 ### Benchmark with External Data

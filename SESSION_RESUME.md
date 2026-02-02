@@ -2524,3 +2524,41 @@ uv run pytest tests/ -v
 | 3 | Fonctionnel | **Cross-encoder reranking** — activer/tester le reranker Qwen3 vs LLM scoring | Basse |
 | 4 | Fonctionnel | **Gestion fichiers supprimés** — flag `--prune` pour nettoyer documents retirés | Basse |
 | 5 | Architecture | **Découper KnowledgeGraph (SRP)** — extraire persistence, summarizer, stats | Basse |
+
+---
+
+# Session CogniDoc - 2 février 2026 (Session 4 suite)
+
+## Résumé
+
+9 améliorations qualité/robustesse : centralisation OLLAMA_HOST, return type hints, SQLite WAL mode, narrowing des exceptions, validation API, constante embedding dimension, docstrings, et 49 nouveaux tests (3 fichiers).
+
+## Tâches complétées
+
+| # | Tâche | Fichiers | Description |
+|---|-------|----------|-------------|
+| 1 | **Centraliser OLLAMA_HOST** | `create_embeddings.py`, `advanced_rag.py`, `embedding_providers.py`, `cognidoc_app.py` | 4 URLs hardcodées `http://localhost:11434` remplacées par `OLLAMA_URL` de `constants.py` |
+| 2 | **Return type hints** | `api.py`, `helpers.py`, `query_orchestrator.py` | Ajout `-> None` sur `launch_ui()`, `save()`, `_load_custom_weights()` ; `-> Generator[str, None, None]` sur `run_streaming()` |
+| 3 | **SQLite WAL mode** | `hybrid_retriever.py`, `embedding_cache.py`, `tool_cache.py` | `PRAGMA journal_mode=WAL` + `PRAGMA synchronous=NORMAL` dans les 3 `_init_db()` |
+| 4 | **Tests manquants** | `tests/test_api.py`, `tests/test_extract_entities.py`, `tests/test_graph_retrieval.py` | 49 nouveaux tests (12 + 21 + 16) couvrant API publique, extraction d'entités, et graph retrieval |
+| 5 | **Narrowing exceptions** | `query_orchestrator.py`, `graph_retrieval.py`, `create_embeddings.py`, `embedding_providers.py`, `knowledge_graph.py` | 10 `except Exception` remplacés par types spécifiques (`FileNotFoundError`, `ConnectionError`, `ValueError`, etc.) |
+| 6 | **Validation réponses API** | `embedding_providers.py` | Validation présence clé `"embedding"` dans la réponse Ollama avant accès |
+| 7 | **Dimension embedding → constante** | `constants.py`, `chunk_text_data.py` | `EMBEDDING_FALLBACK_DIMENSION = int(os.getenv("EMBEDDING_FALLBACK_DIMENSION", "896"))` |
+| 8 | **Docstrings API publique** | `api.py`, `graph_retrieval.py` | Docstrings `chat()` (streaming contract), `retrieve()`, `retrieve_from_graph()` |
+| 9 | **Messages deprecation** | `api.py` | `save()` et `load()` : wording "no-op", directives `.. deprecated::` |
+
+## Tests
+
+```bash
+uv run pytest tests/ -v
+# 829 tests collected, 731 passed, 2 failed (pre-existing YOLO cv2.imshow), 1 skipped
+# 26 modules de test, 49 nouveaux tests ajoutés
+```
+
+### Commits
+
+| Hash | Message |
+|------|---------|
+| `284e1b7` | Centralize OLLAMA_HOST, add WAL mode, narrow exceptions, add 49 tests |
+
+### CI GitHub Actions — ✅ tous les jobs passent

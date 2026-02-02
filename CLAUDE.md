@@ -441,6 +441,7 @@ YOLO detection requires `models/YOLOv11/yolov11x_best.pt` (~109 MB, gitignored).
 | `test_00_e2e_pipeline.py` | 9 | E2E pipeline (runs first to avoid Qdrant lock) |
 | `test_agent.py` | 60 | Agent ReAct loop |
 | `test_agent_tools.py` | 43 | Tool implementations |
+| `test_api.py` | 12 | CogniDoc public API, config validation, deprecation |
 | `test_benchmark.py` | 12 | Precision/recall benchmark with reranking comparison |
 | `test_build_indexes.py` | 10 | Vector/keyword index building |
 | `test_checkpoint.py` | 32 | Checkpoint/resume system |
@@ -450,7 +451,9 @@ YOLO detection requires `models/YOLOv11/yolov11x_best.pt` (~109 MB, gitignored).
 | `test_conversion.py` | 29 | Document format conversion |
 | `test_e2e_language_and_count.py` | 24 | Language detection (FR/EN/ES/DE) |
 | `test_entity_resolution.py` | 34 | Entity resolution (blocking, matching, clustering, merging) |
+| `test_extract_entities.py` | 21 | Entity/relationship extraction, JSON parsing, prompts |
 | `test_graph_config.py` | 25 | GraphRAG schema loading and validation |
+| `test_graph_retrieval.py` | 16 | Graph retrieval cache, retriever, result dataclass |
 | `test_helpers.py` | 34 | Token counting, chat history, query parsing |
 | `test_hybrid_retriever.py` | 17 | Hybrid retrieval, cache serialization, context manager |
 | `test_incremental_ingestion.py` | 28 | Incremental ingestion manifest and pipeline |
