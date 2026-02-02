@@ -187,8 +187,8 @@ class TestGetNewAndModifiedFiles:
         manifest = IngestionManifest()
         manifest.record_file(f, sources, "doc")
 
-        # Modify the file
-        f.write_bytes(b"modified content")
+        # Modify the file (different size to trigger fast-path size check on all platforms)
+        f.write_bytes(b"modified content that is longer")
 
         new, modified, stems = manifest.get_new_and_modified_files(sources)
         assert len(new) == 0
