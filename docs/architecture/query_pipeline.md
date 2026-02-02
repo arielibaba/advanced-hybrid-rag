@@ -45,7 +45,7 @@ Without complexity evaluation, the system would have to choose a single path for
 
 - **~~The scoring is coarse~~** *(addressed)*: factors now use continuous scoring functions (`min(n/4, 1.0)`, linear ramps) instead of discrete 0.0/0.5/1.0 steps. See "Factor Scoring" below for the formulas.
 - **No feedback loop**: the thresholds (0.35, 0.55) are static. If the agent consistently produces better answers than the fast path for queries scoring 0.40, there is no mechanism to learn and lower the threshold. An adaptive threshold based on user satisfaction signals (thumbs up/down, follow-up questions) could improve routing over time.
-- **Keyword matching is brittle**: regex patterns must be maintained manually per language. While patterns now cover 4 languages (EN/FR/ES/DE — see "Multilingual Query Classification" in Section 3), a rephrasing like "en quoi X et Y divergent-ils" still does not trigger on "différences". A lightweight embedding-based classifier could replace the keyword factor for more robust detection.
+- **~~Keyword matching is brittle~~** *(addressed)*: `count_complex_keywords()` now uses embedding-based semantic matching against 5 category reference phrases (causal, analytical, comparative, multi_step, synthesis) instead of 47 regex patterns. Rephrased queries like "en quoi X et Y divergent-ils" now match the comparative category via cosine similarity. The regex patterns are kept as a fallback when the embedding provider is unavailable. See "Embedding-Based Keyword Classifier" below.
 - **~~No distinction between MODERATE and SIMPLE in practice~~** *(addressed)*: the enhanced path now uses `top_k × 1.5` for queries with complexity 0.35-0.55, increasing retrieval depth without the full agent loop. See "MODERATE Path Differentiation" in Section 3.
 
 ### The Formula
@@ -71,12 +71,12 @@ Four of the five factors use continuous scoring functions. `query_type` remains 
 | **query_type** | 25% | Discrete: 0.0 (FACTUAL, PROCEDURAL), 0.5 (RELATIONAL, EXPLORATORY), 1.0 (ANALYTICAL, COMPARATIVE) | — |
 | **entity_count** | 20% | `min(count / 4, 1.0)` | 0→0.0, 1→0.25, 2→0.5, 3→0.75, 4+→1.0 |
 | **subquestion_count** | 20% | `min((count - 1) / 3, 1.0)` | 1→0.0, 2→0.33, 3→0.67, 4+→1.0 |
-| **keyword_matches** | 20% | `min(count / 4, 1.0)` | 0→0.0, 1→0.25, 2→0.5, 3→0.75, 4+→1.0 |
+| **keyword_matches** | 20% | `min(count / 3, 1.0)` | 0→0.0, 1→0.33, 2→0.67, 3+→1.0 |
 | **low_confidence** | 15% | `clamp((0.7 - confidence) / 0.5)` | 0.7+→0.0, 0.6→0.2, 0.45→0.5, 0.2→1.0 |
 
 **Why continuous scoring:** The previous discrete scoring (0.0/0.5/1.0) lost information at the boundaries. A query with 3 entities scored the same as one with 10 (both 1.0). A query with 1 entity scored the same as one with 0 (both 0.0). Continuous functions preserve the proportional signal: 3 entities (0.75) is meaningfully different from 2 (0.5) and 4 (1.0). This improves routing precision for borderline queries in the 0.35-0.55 range.
 
-**Why these specific functions:** Each function is designed to match the previous behavior at the key breakpoints (2 entities ≈ 0.5, ≥4 = 1.0) while filling in the gaps. The denominators (4 for entities/keywords, 3 for sub-questions, 0.5 for confidence) were chosen so that the saturation point (score = 1.0) corresponds to a value that genuinely indicates high complexity. Beyond 4 entities or 4 keywords, additional ones don't meaningfully increase complexity — the query is already clearly complex.
+**Why these specific functions:** Each function is designed to match the previous behavior at the key breakpoints (2 entities ≈ 0.5, ≥4 = 1.0) while filling in the gaps. The denominators (4 for entities, 3 for keywords/sub-questions, 0.5 for confidence) were chosen so that the saturation point (score = 1.0) corresponds to a value that genuinely indicates high complexity. Beyond 4 entities, additional ones don't meaningfully increase complexity. For keywords, the denominator is 3 because the maximum is 5 categories and matching 3+ categories already indicates a clearly complex query.
 
 **query_type** comes from the classifier (`QueryOrchestrator`). ANALYTICAL and COMPARATIVE queries inherently require multi-step reasoning. This factor remains discrete because query types are categorical, not ordinal.
 
@@ -84,7 +84,7 @@ Four of the five factors use continuous scoring functions. `query_type` remains 
 
 **subquestion_count** is derived from the rewritten query. The query rewriter decomposes complex questions into bullet points; more sub-questions means more retrieval steps needed. The formula subtracts 1 because a single question (count=1) should score 0.0 — it's the baseline, not a complexity signal.
 
-**keyword_matches** counts regex matches against ~45 patterns in French, English, Spanish, and German covering causal reasoning ("pourquoi", "why"), analysis ("analyser", "evaluate"), comparison ("comparer", "avantages"), multi-step ("étapes", "processus"), and synthesis ("résumer", "overview").
+**keyword_matches** counts how many of 5 semantic complexity categories the query matches. Each category has 2 reference phrases (English + French) that are embedded once and cached. The query is embedded and compared via cosine similarity (threshold 0.45) against each category. Categories: causal ("why, cause, consequences"), analytical ("analyze, evaluate, justify"), comparative ("compare, advantages, differences"), multi_step ("steps, process, first then"), synthesis ("summarize, overview"). Falls back to regex matching (~45 patterns) if the embedding provider is unavailable.
 
 **low_confidence** uses the classifier's own confidence score. The linear ramp starts at 0.7 (above which the classifier is confident enough that its uncertainty is not a useful signal) and reaches 1.0 at 0.2 (very uncertain). When the classifier is unsure about the query type, the agent is more likely to produce a better result through iterative retrieval.
 
@@ -115,7 +115,7 @@ Query: *"Compare les avantages et inconvenients du processus X par rapport a Y"*
 - `query_type` = COMPARATIVE --> **1.0**
 - `entity_count` = 2 (X, Y) --> `min(2/4, 1.0)` = **0.5**
 - `subquestion_count` = likely 3 --> `min((3-1)/3, 1.0)` = **0.67**
-- `keyword_matches` = "compare", "avantages", "inconvenients", "processus" (4 matches) --> `min(4/4, 1.0)` = **1.0**
+- `keyword_matches` = matches comparative ("avantages", "inconvenients") + multi_step ("processus") + analytical ("compare...par rapport") = 3 categories --> `min(3/3, 1.0)` = **1.0**
 - `low_confidence` = assuming confidence 0.7 --> `clamp((0.7-0.7)/0.5)` = **0.0**
 
 Score: `0.25*1.0 + 0.20*0.5 + 0.20*0.67 + 0.20*1.0 + 0.15*0.0 = 0.684` --> agent path.
@@ -135,6 +135,32 @@ if 0.35 <= complexity.score < 0.55:
 This applies to both the hybrid retrieval path and the vector-only fallback path. The 1.5× multiplier provides more candidate documents for reranking, improving answer coverage for moderately complex queries without the full cost of the agent loop.
 
 **Why 1.5×:** A 2× multiplier would double the reranking input and increase latency noticeably (~0.5s more). 1.5× adds 5 more candidates (10 → 15), giving the reranker a meaningfully larger pool while keeping the latency increase marginal. Queries below 0.35 are simple enough that 10 candidates suffice; queries above 0.55 are handled by the agent which makes its own retrieval decisions.
+
+### Embedding-Based Keyword Classifier
+
+**File:** `src/cognidoc/complexity.py` (function `count_complex_keywords`, lines 288-311)
+
+The keyword_matches factor previously relied on 47 regex patterns that had to be maintained manually per language. A rephrased query like "en quoi X et Y divergent-ils" could not match the pattern "différences". The new approach uses embedding-based semantic matching.
+
+**5 category reference phrases** (defined in `COMPLEXITY_CATEGORIES`):
+
+| Category | English reference | French reference |
+|----------|-------------------|------------------|
+| causal | "why does this happen, what is the cause, consequences and effects" | "pourquoi, quelle est la cause, conséquences et effets" |
+| analytical | "analyze and evaluate, explain and justify the reasoning" | "analyser et évaluer, expliquer et justifier le raisonnement" |
+| comparative | "compare the advantages and disadvantages, what are the differences" | "comparer les avantages et inconvénients, quelles sont les différences" |
+| multi_step | "what are the steps in the process, first do this then do that" | "quelles sont les étapes du processus, d'abord faire ceci puis cela" |
+| synthesis | "summarize and give an overview, provide a synthesis" | "résumer et donner une vue d'ensemble, fournir une synthèse" |
+
+**Matching:** At query time, the query is embedded via `get_embedding()` and compared to all 10 reference embeddings (5 categories × 2 languages) using cosine similarity. A category matches if its best similarity exceeds `SEMANTIC_SIMILARITY_THRESHOLD` (0.45). The count of matched categories (0-5) is used as the keyword_matches factor.
+
+**Caching:** Category reference embeddings are computed lazily on first query and stored in a module-level global (`_category_embeddings`). Cost: ~500ms one-time, then 0ms. Query embeddings go through the existing `QueryEmbeddingCache` (LRU, 100 entries).
+
+**Fallback:** If `get_embedding()` raises (Ollama down, no model loaded), the function catches the exception and falls back to `_count_complex_keywords_regex()`, which uses the original 47 regex patterns. This ensures complexity evaluation never fails.
+
+**Why 5 categories instead of 47 patterns:** The embedding model (qwen3-embedding) handles multilingual semantics natively. A single "causal" reference phrase covers "why", "pourquoi", "warum", "por qué", and all reformulations thereof. This eliminates the maintenance burden of per-language pattern lists and naturally handles languages not explicitly covered (Spanish, German, etc. work through the multilingual embedding space).
+
+**Why threshold 0.45:** Empirically chosen to balance sensitivity (catch reformulations) with precision (avoid false matches on unrelated queries). Lower thresholds (0.3) matched too aggressively — simple factual queries triggered causal/analytical categories. Higher thresholds (0.6) missed valid reformulations.
 
 ---
 
@@ -158,7 +184,7 @@ A single retrieval pass involves: query classification (1 LLM call), vector sear
 - **~~Exact match only~~** *(addressed)*: the cache now normalizes queries before hashing — lowercasing, collapsing whitespace, and stripping trailing punctuation. "What is X?" and "what is x ?" now produce the same cache key. See "Cache Key Normalization" below.
 - **No semantic similarity**: "What is X?" and "Tell me about X" are cache misses despite being semantically identical. An embedding-based cache key (cosine similarity above a threshold) could catch these, at the cost of an embedding computation per lookup.
 - **In-memory only**: the cache is lost on process restart. For long-running production deployments, persisting the cache (e.g., SQLite, like the embedding cache already does) would preserve it across restarts. However, the 5-minute TTL makes this less critical — most entries would expire anyway.
-- **No invalidation on re-ingestion**: if documents are re-ingested while the app is running, cached results may reference stale content. An explicit `cache.clear()` after ingestion would solve this, but there is currently no hook between the ingestion pipeline and the query cache.
+- **~~No invalidation on re-ingestion~~** *(addressed)*: `_clear_query_caches()` in `run_ingestion_pipeline.py` now clears all 4 query-time caches (retrieval, query embedding, reranking, tool) after ingestion completes. See "Cache Invalidation on Re-Ingestion" below.
 
 ### Implementation
 
@@ -213,6 +239,23 @@ Results are cached at the very end of the pipeline (line 848), after fusion and 
 
 The cache exposes `stats()` returning current size, hit rate, hits/misses. This is visible in the Gradio UI via the "refresh metrics" button and in debug logs.
 
+### Cache Invalidation on Re-Ingestion
+
+**File:** `src/cognidoc/run_ingestion_pipeline.py` (function `_clear_query_caches`, lines 945-975)
+
+After ingestion completes, 4 query-time caches may hold stale data referencing old document content. `_clear_query_caches()` is called before `return stats` at the end of `run_ingestion_pipeline_async()`:
+
+| Cache | Module | Clear function |
+|-------|--------|----------------|
+| Retrieval cache (LRU, 50 entries) | `hybrid_retriever` | `clear_retrieval_cache()` |
+| Query embedding cache (LRU, 100 entries) | `utils/rag_utils` | `clear_query_embedding_cache()` |
+| Reranking cache (LRU) | `utils/advanced_rag` | `clear_reranking_cache()` |
+| Tool result cache (SQLite, TTL-based) | `utils/tool_cache` | `get_tool_cache().clear()` |
+
+Each import is wrapped in `try/except ImportError` because these modules have heavy dependencies (qdrant, gradio) that may not be available in all contexts (e.g., CLI-only ingestion without the UI installed).
+
+The function is **not called** at the early exit path (line ~1037, "Nothing to ingest") because no documents were reprocessed, so no cache entries can be stale.
+
 ---
 
 ## 3. Weighted Vector/Graph Fusion
@@ -235,7 +278,7 @@ Without fusion, the system would have to pick one retriever per query (losing in
 ### Limitations and Possible Improvements
 
 - **~~Fusion is binary, not proportional~~** *(addressed)*: `fuse_results()` now caps vector results and graph entities proportionally by weight. A weight of 0.2 with 10 vector results includes only 2; a weight of 0.3 with 10 graph entities includes only 3. Minimum 1 result when weight > 0. See "Proportional Fusion" in Phase D below.
-- **No cross-retriever reranking**: after fusion, the vector and graph results are presented as separate sections. There is no unified reranking that interleaves the best results from both sources. A cross-retriever reranker could produce a more coherent context by ordering all results by relevance regardless of source.
+- **No cross-retriever reranking**: vector and graph results remain in separate sections (they are structurally different — document chunks vs entity descriptions). Lost-in-the-middle fusion (Phase E) partially addresses this by optimizing the positional placement of both sections within the context, but there is no unified relevance-based interleaving.
 - **Static weight table**: the weights are hardcoded per query type. Different corpora may benefit from different balances (e.g., a highly structured corpus with rich entity relationships might benefit from higher graph weights across the board). Per-corpus weight tuning or learned weights based on retrieval feedback could improve quality.
 - **~~The confidence adjustment is symmetric~~** *(addressed)*: `should_fallback()` now uses a proportional shift via `_confidence_shift()`. The adjustment scales from 0.0 (confidence at threshold) to 0.3 (confidence at zero). A barely-below-threshold score (0.29 vs 0.3) produces a small correction; a very low score (0.05) produces nearly the full 0.3 shift. See "Proportional Confidence Adjustment" in Phase C below.
 
@@ -323,6 +366,44 @@ The `max(1, ...)` minimum ensures that any retriever with non-zero weight contri
 - `max_graph_entities = max(1, round(10 × 0.9)) = 9` — 9 of 10 graph entities included
 
 This replaces the previous binary approach where all results from both retrievers were included regardless of weight. The weights now directly control context composition, giving the LLM a naturally balanced input that reflects the query type's retrieval priorities.
+
+### Phase E: Lost-in-the-Middle Reordering (`fuse_results`, lines 301-355)
+
+LLMs attend more to the beginning and end of their context window than to the middle (Liu et al., 2023). `fuse_results()` exploits this by placing the most relevant vector chunks at the start and end positions, with less relevant chunks and graph context in the middle.
+
+**When applied:** `use_lost_in_middle=True` (default), 3+ vector chunks after proportional capping.
+
+**Algorithm:** `reorder_lost_in_middle()` from `utils/advanced_rag.py` splits chunks by alternating indices:
+
+```
+Input (by relevance):  [1, 2, 3, 4, 5]
+Even indices (left):   [1, 3, 5]
+Odd indices (right):   [2, 4] → reversed: [4, 2]
+Output:                [1, 3, 5, 4, 2]
+```
+
+Result: chunk #1 (best) at start, chunk #2 (2nd best) at end, chunks #3-5 in the middle.
+
+**Fusion with graph context:** When vector is the dominant retrieval source (`vector_weight >= graph_weight`), the reordered vector chunks are split in two halves with graph context sandwiched between them:
+
+```
+=== DOCUMENT CONTEXT ===
+[Document 1] — best chunk (start = high attention)
+[Document 2] — 3rd best
+
+=== KNOWLEDGE GRAPH CONTEXT ===
+[graph entities, relationships, community summaries]    ← middle = low attention
+
+[Document 3] — 5th best
+[Document 4] — 4th best
+[Document 5] — 2nd best chunk (end = high attention)
+```
+
+When graph is the dominant source (`graph_weight > vector_weight`), the default order is preserved: graph context first, then vector chunks. This gives graph content the beginning-of-context attention advantage when it is the primary information source.
+
+**Why not apply reordering twice** (once on vector chunks, once at fusion level): The reordering function is deterministic — applying it to already-reordered chunks would scramble the relevance ordering without any guarantee that the best chunks end up at the extremities. A single application on the relevance-sorted input, at the fusion level where the full context structure is known, is sufficient.
+
+**Configuration:** `ENABLE_LOST_IN_MIDDLE_REORDER` environment variable (default: `true`). When disabled, chunks are included in their original relevance-descending order.
 
 ---
 
