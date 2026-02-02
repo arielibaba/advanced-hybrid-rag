@@ -90,8 +90,8 @@ def make_metadata(chunk_filename: str) -> dict:
             before, after = chunk_filename.split("_page_", 1)
             document = decode_document_path(before)
             page = after.split("_")[0]
-        except ValueError:
-            pass
+        except ValueError as e:
+            logger.debug(f"Could not parse page info from chunk filename '{chunk_filename}': {e}")
 
     return {
         "child": chunk_filename,
@@ -369,12 +369,7 @@ def create_embeddings(
         # Process in batches
         num_batches = (len(chunks_to_embed) + batch_size - 1) // batch_size
 
-        # Check if we're already in an async context
-        try:
-            loop = asyncio.get_running_loop()
-            in_async_context = True
-        except RuntimeError:
-            in_async_context = False
+        from .utils.async_utils import run_coroutine
 
         with tqdm(total=len(chunks_to_embed), desc="Embedding chunks", unit="chunk") as pbar:
             for i in range(0, len(chunks_to_embed), batch_size):
@@ -384,24 +379,11 @@ def create_embeddings(
                 logger.debug(f"Processing batch {batch_num}/{num_batches} ({len(batch)} chunks)")
 
                 # Run async embedding for this batch
-                if in_async_context:
-                    # Use nest_asyncio or run in thread to avoid event loop conflict
-                    import concurrent.futures
-
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(
-                            asyncio.run,
-                            embed_batch_async(
-                                batch, embeddings_path, embed_model, use_cache, max_concurrent
-                            ),
-                        )
-                        success, errors = future.result()
-                else:
-                    success, errors = asyncio.run(
-                        embed_batch_async(
-                            batch, embeddings_path, embed_model, use_cache, max_concurrent
-                        )
+                success, errors = run_coroutine(
+                    embed_batch_async(
+                        batch, embeddings_path, embed_model, use_cache, max_concurrent
                     )
+                )
 
                 total_success += success
                 total_errors += errors

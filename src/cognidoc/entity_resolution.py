@@ -348,7 +348,7 @@ def _parse_resolution_response(response: str, fallback_name: str) -> Dict[str, A
     try:
         return json.loads(response)
     except json.JSONDecodeError:
-        pass
+        logger.debug("Direct JSON parse failed, trying code block extraction")
 
     # Try to find JSON in markdown code block
     json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response)
@@ -356,7 +356,7 @@ def _parse_resolution_response(response: str, fallback_name: str) -> Dict[str, A
         try:
             return json.loads(json_match.group(1))
         except json.JSONDecodeError:
-            pass
+            logger.debug("Code block JSON parse failed, trying raw object extraction")
 
     # Try to find JSON object
     json_match = re.search(r"\{[\s\S]*\}", response)
@@ -364,7 +364,7 @@ def _parse_resolution_response(response: str, fallback_name: str) -> Dict[str, A
         try:
             return json.loads(json_match.group(0))
         except json.JSONDecodeError:
-            pass
+            logger.debug("Raw JSON object parse failed")
 
     logger.warning(f"Failed to parse resolution response: {response[:200]}...")
     return {

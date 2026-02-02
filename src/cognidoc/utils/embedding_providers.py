@@ -121,6 +121,7 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
     @classmethod
     def _get_async_client(cls, timeout: float):
         """Get shared async client with connection pooling."""
+        import atexit
         import httpx
 
         if cls._shared_async_client is None:
@@ -129,6 +130,19 @@ class OllamaEmbeddingProvider(BaseEmbeddingProvider):
                 timeout=timeout,
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
             )
+
+            # Register cleanup so the client is closed on interpreter shutdown
+            def _close_client():
+                import asyncio
+
+                client = cls._shared_async_client
+                if client is not None:
+                    try:
+                        asyncio.get_running_loop()
+                    except RuntimeError:
+                        asyncio.run(client.aclose())
+
+            atexit.register(_close_client)
         return cls._shared_async_client
 
     def embed_single(self, text: str) -> List[float]:

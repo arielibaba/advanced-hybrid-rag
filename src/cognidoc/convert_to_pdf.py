@@ -88,8 +88,8 @@ def find_libreoffice() -> Optional[str]:
         result = subprocess.run([cmd, "soffice"], capture_output=True, text=True)
         if result.returncode == 0:
             return result.stdout.strip().split("\n")[0]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not find soffice via system command: {e}")
 
     return None
 

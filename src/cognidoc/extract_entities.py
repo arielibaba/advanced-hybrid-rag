@@ -1160,47 +1160,23 @@ def run_extraction_async(
             processed_chunk_ids=previous_checkpoint["processed_chunk_ids"]
         )
     """
-    try:
-        # Check if we're already in an async context
-        loop = asyncio.get_running_loop()
-        # We're in an async context, use ThreadPoolExecutor to avoid conflicts
-        import concurrent.futures
+    from .utils.async_utils import run_coroutine
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                asyncio.run,
-                extract_from_chunks_dir_async(
-                    chunks_dir=chunks_dir,
-                    config=config,
-                    include_parent_chunks=include_parent_chunks,
-                    include_child_chunks=include_child_chunks,
-                    include_descriptions=include_descriptions,
-                    max_concurrent=max_concurrent,
-                    show_progress=show_progress,
-                    processed_chunk_ids=processed_chunk_ids,
-                    max_consecutive_quota_errors=max_consecutive_quota_errors,
-                    on_progress_callback=on_progress_callback,
-                    file_filter=file_filter,
-                ),
-            )
-            return future.result()
-    except RuntimeError:
-        # No running event loop, safe to use asyncio.run
-        return asyncio.run(
-            extract_from_chunks_dir_async(
-                chunks_dir=chunks_dir,
-                config=config,
-                include_parent_chunks=include_parent_chunks,
-                include_child_chunks=include_child_chunks,
-                include_descriptions=include_descriptions,
-                max_concurrent=max_concurrent,
-                show_progress=show_progress,
-                processed_chunk_ids=processed_chunk_ids,
-                max_consecutive_quota_errors=max_consecutive_quota_errors,
-                on_progress_callback=on_progress_callback,
-                file_filter=file_filter,
-            )
+    return run_coroutine(
+        extract_from_chunks_dir_async(
+            chunks_dir=chunks_dir,
+            config=config,
+            include_parent_chunks=include_parent_chunks,
+            include_child_chunks=include_child_chunks,
+            include_descriptions=include_descriptions,
+            max_concurrent=max_concurrent,
+            show_progress=show_progress,
+            processed_chunk_ids=processed_chunk_ids,
+            max_consecutive_quota_errors=max_consecutive_quota_errors,
+            on_progress_callback=on_progress_callback,
+            file_filter=file_filter,
         )
+    )
 
 
 def save_extraction_results(

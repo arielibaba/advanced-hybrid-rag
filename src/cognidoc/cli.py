@@ -11,8 +11,60 @@ Commands:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
+from typing import List
+
+
+def validate_environment(
+    llm_provider: str = "gemini",
+    embedding_provider: str = "ollama",
+    check_data_dir: bool = False,
+    data_dir: str = "./data",
+) -> List[str]:
+    """
+    Validate that the runtime environment is properly configured.
+
+    Returns a list of warning/error strings.  An empty list means everything
+    looks good.  Errors are prefixed with ``[ERROR]``, warnings with
+    ``[WARN]``.
+    """
+    issues: List[str] = []
+
+    # --- API keys ---
+    key_map = {
+        "gemini": ("GOOGLE_API_KEY", "Set GOOGLE_API_KEY or create a .env file"),
+        "openai": ("OPENAI_API_KEY", "Set OPENAI_API_KEY in your environment"),
+        "anthropic": ("ANTHROPIC_API_KEY", "Set ANTHROPIC_API_KEY in your environment"),
+    }
+    for provider in (llm_provider, embedding_provider):
+        if provider in key_map:
+            env_var, hint = key_map[provider]
+            if not os.environ.get(env_var):
+                issues.append(f"[ERROR] {env_var} not set (required by {provider}). {hint}")
+
+    # --- Ollama reachability ---
+    if "ollama" in (llm_provider, embedding_provider):
+        host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        try:
+            import urllib.request
+
+            urllib.request.urlopen(host, timeout=2)
+        except Exception:
+            issues.append(
+                f"[WARN] Cannot reach Ollama at {host}. " "Make sure it is running (ollama serve)."
+            )
+
+    # --- Data directory ---
+    if check_data_dir:
+        dp = Path(data_dir)
+        if not dp.exists():
+            issues.append(
+                f"[WARN] Data directory {dp} does not exist. It will be created on first ingestion."
+            )
+
+    return issues
 
 
 def cmd_ingest(args):
@@ -47,6 +99,15 @@ def cmd_ingest(args):
         status = "READY" if results["valid"] else "NOT READY"
         print(f"\nStatus: {status}")
         return
+
+    # Validate environment before heavy imports
+    issues = validate_environment(
+        args.llm, args.embedding, check_data_dir=True, data_dir=args.data_dir
+    )
+    for issue in issues:
+        print(issue, file=sys.stderr)
+    if any(i.startswith("[ERROR]") for i in issues):
+        sys.exit(1)
 
     from .api import CogniDoc
 
@@ -84,6 +145,14 @@ def cmd_ingest(args):
 
 def cmd_query(args):
     """Handle the query command."""
+    issues = validate_environment(
+        args.llm, args.embedding, check_data_dir=True, data_dir=args.data_dir
+    )
+    for issue in issues:
+        print(issue, file=sys.stderr)
+    if any(i.startswith("[ERROR]") for i in issues):
+        sys.exit(1)
+
     from .api import CogniDoc
 
     doc = CogniDoc(
@@ -105,6 +174,12 @@ def cmd_query(args):
 
 def cmd_serve(args):
     """Handle the serve command."""
+    issues = validate_environment(args.llm, args.embedding)
+    for issue in issues:
+        print(issue, file=sys.stderr)
+    if any(i.startswith("[ERROR]") for i in issues):
+        sys.exit(1)
+
     from .api import CogniDoc
 
     doc = CogniDoc(

@@ -475,19 +475,10 @@ SUMMARY:"""
                 # Use batched async embedding
                 try:
                     texts = [summary for _, summary in communities_to_embed]
-                    coro = provider.embed_async(texts, max_concurrent=4)
-                    try:
-                        loop = asyncio.get_running_loop()
-                        # Already in an event loop — run in a new thread
-                        import concurrent.futures
+                    from .utils.async_utils import run_coroutine
 
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            embeddings = loop.run_until_complete(
-                                loop.run_in_executor(pool, lambda: asyncio.run(coro))
-                            )
-                    except RuntimeError:
-                        # No event loop running — safe to use asyncio.run()
-                        embeddings = asyncio.run(coro)
+                    coro = provider.embed_async(texts, max_concurrent=4)
+                    embeddings = run_coroutine(coro)
                     for (comm_id, _), embedding in zip(communities_to_embed, embeddings):
                         if embedding:
                             self.communities[comm_id].embedding = embedding
@@ -609,17 +600,10 @@ SUMMARY:"""
 
                 try:
                     # Run async batch embedding
-                    coro = provider.embed_async(batch_texts, max_concurrent=4)
-                    try:
-                        loop = asyncio.get_running_loop()
-                        import concurrent.futures
+                    from .utils.async_utils import run_coroutine
 
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            embeddings = loop.run_until_complete(
-                                loop.run_in_executor(pool, lambda c=coro: asyncio.run(c))
-                            )
-                    except RuntimeError:
-                        embeddings = asyncio.run(coro)
+                    coro = provider.embed_async(batch_texts, max_concurrent=4)
+                    embeddings = run_coroutine(coro)
 
                     # Assign embeddings to nodes
                     for (node_id, _), embedding in zip(batch, embeddings):
@@ -1144,8 +1128,8 @@ def get_knowledge_graph_stats(path: str = None) -> Dict[str, int]:
             with open(nodes_file, "r", encoding="utf-8") as f:
                 nodes_data = json.load(f)
             stats["nodes"] = len(nodes_data)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not read nodes.json: {e}")
 
     # Count communities
     communities_file = kg_path / "communities.json"
@@ -1154,8 +1138,8 @@ def get_knowledge_graph_stats(path: str = None) -> Dict[str, int]:
             with open(communities_file, "r", encoding="utf-8") as f:
                 communities_data = json.load(f)
             stats["communities"] = len(communities_data)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not read communities.json: {e}")
 
     # Count edges from graph pickle
     graph_file = kg_path / "graph.gpickle"
@@ -1164,8 +1148,8 @@ def get_knowledge_graph_stats(path: str = None) -> Dict[str, int]:
             with open(graph_file, "rb") as f:
                 graph = pickle.load(f)
             stats["edges"] = graph.number_of_edges()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not read graph.gpickle: {e}")
 
     return stats
 

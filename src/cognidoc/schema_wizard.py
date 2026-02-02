@@ -387,7 +387,7 @@ def sample_pdfs_for_schema(
 
 async def _llm_chat_async(messages: List[Dict[str, str]], **kwargs) -> str:
     """Run llm_chat in a thread pool for async usage."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, lambda: llm_chat(messages, **kwargs))
 
 
@@ -831,39 +831,18 @@ def generate_schema_from_corpus_sync(
     Returns:
         Generated schema dict
     """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
+    from .utils.async_utils import run_coroutine
 
-    if loop and loop.is_running():
-        # Already in async context — run in a new thread
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                asyncio.run,
-                generate_schema_from_corpus(
-                    sources_dir=sources_dir,
-                    pdf_dir=pdf_dir,
-                    language=language,
-                    max_docs=max_docs,
-                    max_pages=max_pages,
-                    convert_first=convert_first,
-                ),
-            )
-            return future.result()
-    else:
-        return asyncio.run(
-            generate_schema_from_corpus(
-                sources_dir=sources_dir,
-                pdf_dir=pdf_dir,
-                language=language,
-                max_docs=max_docs,
-                max_pages=max_pages,
-                convert_first=convert_first,
-            )
+    return run_coroutine(
+        generate_schema_from_corpus(
+            sources_dir=sources_dir,
+            pdf_dir=pdf_dir,
+            language=language,
+            max_docs=max_docs,
+            max_pages=max_pages,
+            convert_first=convert_first,
         )
+    )
 
 
 # ---------------------------------------------------------------------------

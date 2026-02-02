@@ -199,7 +199,7 @@ OUTPUT:"""
                     if node and node not in matched_entities:
                         matched_entities.append(node)
         except json.JSONDecodeError:
-            pass
+            logger.debug("Could not parse entity names as JSON from LLM response")
 
     except Exception as e:
         logger.error(f"Entity extraction from query failed: {e}")
@@ -399,7 +399,10 @@ def retrieve_by_community(
                 s = np.array(summary_embedding)
                 similarity = float(np.dot(q, s) / (q_norm * np.linalg.norm(s)))
                 scored_communities.append((similarity, community))
-            except Exception:
+            except Exception as e:
+                logger.debug(
+                    f"On-the-fly embedding failed for community, using keyword fallback: {e}"
+                )
                 # Fallback to keyword matching
                 query_words = set(query.lower().split())
                 summary_words = set(community.summary.lower().split())

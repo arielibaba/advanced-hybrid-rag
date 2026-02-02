@@ -564,28 +564,48 @@ class CogniDoc:
         """
         Save indexes to disk.
 
+        Indexes are automatically persisted during ingestion, so explicit saving
+        is not required. Use ``CogniDoc(data_dir=path)`` to point at an existing
+        index directory.
+
         Args:
-            path: Directory to save to
+            path: Directory to save to (unused — kept for API compatibility)
         """
-        # TODO: Implement save functionality
-        logger.info(f"Saving CogniDoc state to {path}")
-        raise NotImplementedError("Save functionality not yet implemented")
+        import warnings
+
+        warnings.warn(
+            "save() is unnecessary — indexes are persisted during ingestion. "
+            "Use CogniDoc(data_dir=...) to load an existing knowledge base.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.info(
+            "Indexes are already persisted at %s. No additional save needed.",
+            self.config.data_dir,
+        )
 
     @classmethod
     def load(cls, path: str, **kwargs) -> "CogniDoc":
         """
         Load from saved indexes.
 
+        Equivalent to ``CogniDoc(data_dir=path, **kwargs)``.
+
         Args:
-            path: Directory to load from
+            path: Directory containing a ``data/`` tree with indexes
             **kwargs: Additional configuration options
 
         Returns:
             CogniDoc instance
         """
-        # TODO: Implement load functionality
-        logger.info(f"Loading CogniDoc state from {path}")
-        raise NotImplementedError("Load functionality not yet implemented")
+        import warnings
+
+        warnings.warn(
+            "load() is deprecated — use CogniDoc(data_dir=path) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls(data_dir=path, **kwargs)
 
     @classmethod
     def from_config(cls, config_path: str) -> "CogniDoc":

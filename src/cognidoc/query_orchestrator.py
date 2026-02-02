@@ -258,8 +258,8 @@ def _load_custom_weights():
                     cfg["graph"] = float(weights["graph"])
                 WEIGHT_CONFIG[qt] = cfg
         logger.info(f"Loaded custom query weights for {len(custom)} query types")
-    except Exception:
-        pass  # Use defaults on any error
+    except Exception as e:
+        logger.debug(f"Could not load custom query weights: {e}, using defaults")
 
 
 def classify_query_rules(query: str) -> Tuple[QueryType, float, str]:

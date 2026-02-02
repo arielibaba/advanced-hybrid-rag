@@ -391,3 +391,60 @@ class TestActionableErrors:
                 with pytest.raises(SystemExit) as exc_info:
                     main()
                 assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# Environment validation
+# ---------------------------------------------------------------------------
+
+
+class TestValidateEnvironment:
+
+    def test_missing_google_api_key(self):
+        from cognidoc.cli import validate_environment
+
+        with patch.dict("os.environ", {}, clear=True):
+            issues = validate_environment(llm_provider="gemini", embedding_provider="ollama")
+            errors = [i for i in issues if "[ERROR]" in i]
+            assert any("GOOGLE_API_KEY" in e for e in errors)
+
+    def test_no_issues_when_key_set(self):
+        from cognidoc.cli import validate_environment
+
+        with patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key"}, clear=True):
+            with patch("urllib.request.urlopen"):
+                issues = validate_environment(llm_provider="gemini", embedding_provider="ollama")
+                errors = [i for i in issues if "[ERROR]" in i]
+                assert not errors
+
+    def test_ollama_unreachable_warning(self):
+        from cognidoc.cli import validate_environment
+
+        with patch.dict("os.environ", {"GOOGLE_API_KEY": "key"}, clear=True):
+            with patch("urllib.request.urlopen", side_effect=OSError("refused")):
+                issues = validate_environment(llm_provider="gemini", embedding_provider="ollama")
+                warnings = [i for i in issues if "[WARN]" in i]
+                assert any("Ollama" in w for w in warnings)
+
+    def test_ollama_only_no_api_key_required(self):
+        from cognidoc.cli import validate_environment
+
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("urllib.request.urlopen"):
+                issues = validate_environment(llm_provider="ollama", embedding_provider="ollama")
+                errors = [i for i in issues if "[ERROR]" in i]
+                assert not errors
+
+    def test_data_dir_missing_warning(self):
+        from cognidoc.cli import validate_environment
+
+        with patch.dict("os.environ", {"GOOGLE_API_KEY": "key"}, clear=True):
+            with patch("urllib.request.urlopen"):
+                issues = validate_environment(
+                    llm_provider="gemini",
+                    embedding_provider="gemini",
+                    check_data_dir=True,
+                    data_dir="/nonexistent/path",
+                )
+                warnings = [i for i in issues if "[WARN]" in i]
+                assert any("does not exist" in w for w in warnings)

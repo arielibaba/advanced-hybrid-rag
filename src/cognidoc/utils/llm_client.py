@@ -165,7 +165,7 @@ async def llm_chat_async(
     Returns:
         Response text from LLM
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_executor, lambda: llm_chat(messages, temperature, json_mode))
 
 
@@ -251,7 +251,7 @@ async def llm_chat_async_ingestion(
     Returns:
         Response text from LLM
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         _executor, lambda: llm_chat_ingestion(messages, temperature, json_mode)
     )
@@ -312,18 +312,15 @@ def run_parallel_sync(
         Dict mapping name to response text
     """
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If already in async context, use thread pool
-            import concurrent.futures
+        asyncio.get_running_loop()
+        # Already in async context — run in a new thread
+        import concurrent.futures
 
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, run_parallel_llm_calls(calls))
-                return future.result()
-        else:
-            return loop.run_until_complete(run_parallel_llm_calls(calls))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, run_parallel_llm_calls(calls))
+            return future.result()
     except RuntimeError:
-        # No event loop, create new one
+        # No event loop running — safe to use asyncio.run()
         return asyncio.run(run_parallel_llm_calls(calls))
 
 

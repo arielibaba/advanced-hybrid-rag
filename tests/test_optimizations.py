@@ -1932,3 +1932,76 @@ class TestIngestionStats:
         data = json.loads(stats_path.read_text())
         assert len(data) == 1
         assert data[0]["stats"]["recovered"] is True
+
+
+# =============================================================================
+# Async Utility Tests
+# =============================================================================
+
+
+class TestRunCoroutine:
+    """Tests for utils/async_utils.py run_coroutine."""
+
+    def test_run_simple_coroutine(self):
+        from cognidoc.utils.async_utils import run_coroutine
+
+        async def add(a, b):
+            return a + b
+
+        assert run_coroutine(add(2, 3)) == 5
+
+    def test_run_async_sleep(self):
+        from cognidoc.utils.async_utils import run_coroutine
+
+        async def sleepy():
+            await asyncio.sleep(0.01)
+            return "done"
+
+        assert run_coroutine(sleepy()) == "done"
+
+    def test_exception_propagated(self):
+        from cognidoc.utils.async_utils import run_coroutine
+
+        async def fail():
+            raise ValueError("boom")
+
+        with pytest.raises(ValueError, match="boom"):
+            run_coroutine(fail())
+
+
+# =============================================================================
+# API save/load deprecation Tests
+# =============================================================================
+
+
+class TestApiSaveLoadDeprecation:
+    """Tests for api.py save() and load() deprecation."""
+
+    def test_save_emits_deprecation_warning(self):
+        from cognidoc.api import CogniDoc
+
+        with patch.object(CogniDoc, "__init__", lambda self, **kw: None):
+            doc = CogniDoc.__new__(CogniDoc)
+            doc.config = MagicMock()
+            doc.config.data_dir = "/tmp/test"
+            import warnings
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                doc.save("/tmp/test")
+                assert len(w) == 1
+                assert issubclass(w[0].category, DeprecationWarning)
+                assert "unnecessary" in str(w[0].message).lower()
+
+    def test_load_returns_cognidoc_instance(self):
+        from cognidoc.api import CogniDoc
+
+        with patch.object(CogniDoc, "__init__", lambda self, **kw: None):
+            import warnings
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                instance = CogniDoc.load("/tmp/test")
+                assert isinstance(instance, CogniDoc)
+                assert len(w) == 1
+                assert issubclass(w[0].category, DeprecationWarning)
