@@ -157,10 +157,14 @@ class AgentResult:
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def stream(self) -> Generator[str, None, None]:
-        """Stream the answer character by character."""
-        for char in self.answer:
-            yield char
+    def stream(self, chunk_size: int = 3) -> Generator[str, None, None]:
+        """Stream the answer in word chunks for progressive display."""
+        words = self.answer.split()
+        accumulated = ""
+        for i, word in enumerate(words):
+            accumulated += (" " if accumulated else "") + word
+            if i % chunk_size == 0 or i == len(words) - 1:
+                yield accumulated
 
 
 # =============================================================================

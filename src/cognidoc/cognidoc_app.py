@@ -1200,7 +1200,14 @@ def chat_conversation(
                         if result.metadata.get("forced_conclusion"):
                             answer += "\n\n*Note: Response based on available information.*"
 
-                        history[-1]["content"] = answer
+                        # Stream answer progressively (word-by-word)
+                        words = answer.split()
+                        accumulated = ""
+                        for i, word in enumerate(words):
+                            accumulated += (" " if accumulated else "") + word
+                            if i % 3 == 0 or i == len(words) - 1:
+                                history[-1]["content"] = accumulated
+                                yield convert_history_to_tuples(history)
 
                         logger.info(
                             f"Agent completed: {len(result.steps)} steps, "

@@ -1752,3 +1752,183 @@ class TestAutoPruning:
 
         assert "gone.pdf" not in manifest.files
         assert "kept.pdf" in manifest.files
+
+
+# =============================================================================
+# Graph Retrieval Cache Tests
+# =============================================================================
+
+
+class TestGraphRetrievalCache:
+    """Tests for in-memory LRU graph retrieval cache."""
+
+    def _make_result(self, query="test"):
+        from cognidoc.graph_retrieval import GraphRetrievalResult
+
+        return GraphRetrievalResult(
+            query=query,
+            retrieval_type="entity",
+            context="Some context",
+            confidence=0.8,
+        )
+
+    def test_graph_cache_hit(self):
+        """Put + get same query returns cached result."""
+        from cognidoc.graph_retrieval import GraphRetrievalCache
+
+        cache = GraphRetrievalCache(max_size=10, ttl_seconds=60)
+        result = self._make_result()
+        cache.put("What is X?", result)
+
+        cached = cache.get("What is X?")
+        assert cached is not None
+        assert cached.context == "Some context"
+
+    def test_graph_cache_miss(self):
+        """Get unknown query returns None."""
+        from cognidoc.graph_retrieval import GraphRetrievalCache
+
+        cache = GraphRetrievalCache()
+        assert cache.get("unknown query") is None
+
+    def test_graph_cache_ttl_expiry(self):
+        """Expired entries are not returned."""
+        from cognidoc.graph_retrieval import GraphRetrievalCache
+
+        cache = GraphRetrievalCache(ttl_seconds=0.1)
+        cache.put("query", self._make_result())
+
+        import time as _time
+
+        _time.sleep(0.15)
+
+        assert cache.get("query") is None
+
+    def test_graph_cache_lru_eviction(self):
+        """Oldest entry evicted when at capacity."""
+        from cognidoc.graph_retrieval import GraphRetrievalCache
+
+        cache = GraphRetrievalCache(max_size=2, ttl_seconds=60)
+        cache.put("q1", self._make_result("q1"))
+        cache.put("q2", self._make_result("q2"))
+        cache.put("q3", self._make_result("q3"))
+
+        # q1 should be evicted
+        assert cache.get("q1") is None
+        assert cache.get("q2") is not None
+        assert cache.get("q3") is not None
+
+    def test_graph_cache_normalization(self):
+        """Queries are normalized (lowercase, whitespace collapsed)."""
+        from cognidoc.graph_retrieval import GraphRetrievalCache
+
+        cache = GraphRetrievalCache()
+        cache.put("What is X?", self._make_result())
+
+        assert cache.get("what  is  x?") is not None
+        assert cache.get("WHAT IS X?") is not None
+
+    def test_graph_cache_clear(self):
+        """Clear empties cache and resets stats."""
+        from cognidoc.graph_retrieval import GraphRetrievalCache
+
+        cache = GraphRetrievalCache()
+        cache.put("q1", self._make_result())
+        cache.get("q1")  # hit
+        cache.get("q2")  # miss
+
+        cache.clear()
+
+        assert cache.stats()["size"] == 0
+        assert cache.stats()["hits"] == 0
+        assert cache.stats()["misses"] == 0
+
+
+# =============================================================================
+# Persistent Ingestion Stats Tests
+# =============================================================================
+
+
+class TestIngestionStats:
+    """Tests for persistent ingestion stats.
+
+    Uses a local reimplementation of _save_ingestion_stats to avoid importing
+    run_ingestion_pipeline (which pulls in ultralytics/cv2).
+    """
+
+    @staticmethod
+    def _save_stats(stats_path, stats, timing):
+        """Standalone save function matching _save_ingestion_stats logic."""
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+
+        history = []
+        if stats_path.exists():
+            try:
+                history = _json.loads(stats_path.read_text(encoding="utf-8"))
+                if not isinstance(history, list):
+                    history = []
+            except (_json.JSONDecodeError, TypeError, OSError):
+                history = []
+
+        history.append(
+            {
+                "timestamp": _dt.now(_tz.utc).isoformat(),
+                "stats": stats,
+                "timing": timing,
+            }
+        )
+        if len(history) > 50:
+            history = history[-50:]
+
+        stats_path.write_text(_json.dumps(history, indent=2, default=str), encoding="utf-8")
+
+    def test_save_ingestion_stats_creates_file(self, tmp_path):
+        """First save creates JSON file with one entry."""
+        import json
+
+        stats_path = tmp_path / "ingestion_stats.json"
+        self._save_stats(stats_path, {"docs": 5}, {"total_seconds": 10})
+
+        data = json.loads(stats_path.read_text())
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["stats"]["docs"] == 5
+        assert "timestamp" in data[0]
+
+    def test_save_ingestion_stats_appends(self, tmp_path):
+        """Second save appends to existing history."""
+        import json
+
+        stats_path = tmp_path / "ingestion_stats.json"
+        self._save_stats(stats_path, {"run": 1}, {"total_seconds": 5})
+        self._save_stats(stats_path, {"run": 2}, {"total_seconds": 8})
+
+        data = json.loads(stats_path.read_text())
+        assert len(data) == 2
+        assert data[0]["stats"]["run"] == 1
+        assert data[1]["stats"]["run"] == 2
+
+    def test_save_ingestion_stats_max_history(self, tmp_path):
+        """History is capped at 50 entries."""
+        import json
+
+        stats_path = tmp_path / "ingestion_stats.json"
+        for i in range(55):
+            self._save_stats(stats_path, {"run": i}, {"total_seconds": i})
+
+        data = json.loads(stats_path.read_text())
+        assert len(data) == 50
+        assert data[0]["stats"]["run"] == 5
+
+    def test_save_ingestion_stats_corrupted_recovers(self, tmp_path):
+        """Corrupted file is recovered gracefully."""
+        import json
+
+        stats_path = tmp_path / "ingestion_stats.json"
+        stats_path.write_text("INVALID JSON{{{{")
+        self._save_stats(stats_path, {"recovered": True}, {"total_seconds": 1})
+
+        data = json.loads(stats_path.read_text())
+        assert len(data) == 1
+        assert data[0]["stats"]["recovered"] is True

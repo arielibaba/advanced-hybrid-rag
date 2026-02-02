@@ -194,15 +194,18 @@ class TestAgentResult:
         assert "timeout" in result.error
 
     def test_stream(self):
-        """Test streaming answer."""
+        """Test streaming answer in word chunks."""
         result = AgentResult(
             query="test",
-            answer="Hello",
+            answer="Hello world test",
             steps=[],
             success=True,
         )
-        streamed = list(result.stream())
-        assert streamed == ["H", "e", "l", "l", "o"]
+        streamed = list(result.stream(chunk_size=2))
+        # Last chunk should be the full answer
+        assert streamed[-1] == "Hello world test"
+        # Should have multiple chunks
+        assert len(streamed) >= 1
 
 
 class TestCogniDocAgent:
@@ -1067,6 +1070,48 @@ class TestExhaustiveSearchContext:
         assert "25 matches" in gathered
         assert "3 documents" in gathered
         assert "report.pdf" in gathered
+
+
+class TestAgentResultStream:
+    """Tests for AgentResult.stream() word-chunk streaming."""
+
+    def test_agent_result_stream_words(self):
+        """Stream yields progressively growing text, last yield is full answer."""
+        from cognidoc.agent import AgentResult
+
+        result = AgentResult(
+            query="test",
+            answer="The quick brown fox jumps over the lazy dog",
+            steps=[],
+            success=True,
+        )
+
+        chunks = list(result.stream(chunk_size=3))
+
+        # Last chunk should be the full answer
+        assert chunks[-1] == result.answer
+        # Intermediate chunks should be progressively longer
+        for i in range(1, len(chunks)):
+            assert len(chunks[i]) >= len(chunks[i - 1])
+
+    def test_agent_result_stream_single_word(self):
+        """Single word answer yields one chunk."""
+        from cognidoc.agent import AgentResult
+
+        result = AgentResult(query="test", answer="Hello", steps=[], success=True)
+
+        chunks = list(result.stream())
+        assert len(chunks) == 1
+        assert chunks[0] == "Hello"
+
+    def test_agent_result_stream_empty(self):
+        """Empty answer yields no chunks."""
+        from cognidoc.agent import AgentResult
+
+        result = AgentResult(query="test", answer="", steps=[], success=True)
+
+        chunks = list(result.stream())
+        assert len(chunks) == 0
 
 
 if __name__ == "__main__":

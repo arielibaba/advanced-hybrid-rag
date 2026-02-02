@@ -9,7 +9,10 @@ Provides retrieval capabilities from the knowledge graph including:
 """
 
 import re
+import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -66,6 +69,58 @@ class GraphRetrievalResult:
                     parts.append(f"- {comm.summary}")
 
         return "\n".join(parts) if parts else ""
+
+
+class GraphRetrievalCache:
+    """In-memory LRU cache for graph retrieval results with TTL."""
+
+    def __init__(self, max_size: int = 100, ttl_seconds: float = 600.0):
+        self._cache: OrderedDict = OrderedDict()
+        self._max_size = max_size
+        self._ttl = ttl_seconds
+        self._lock = Lock()
+        self._hits = 0
+        self._misses = 0
+
+    @staticmethod
+    def _normalize(query: str) -> str:
+        """Normalize query for cache key (lowercase, collapse whitespace)."""
+        return " ".join(query.lower().strip().split())
+
+    def get(self, query: str) -> Optional[GraphRetrievalResult]:
+        """Get cached result. Returns None on miss or expiry."""
+        key = self._normalize(query)
+        with self._lock:
+            if key in self._cache:
+                ts, result = self._cache[key]
+                if time.monotonic() - ts < self._ttl:
+                    self._cache.move_to_end(key)
+                    self._hits += 1
+                    return result
+                del self._cache[key]
+            self._misses += 1
+            return None
+
+    def put(self, query: str, result: GraphRetrievalResult) -> None:
+        """Cache a result, evicting oldest if at capacity."""
+        key = self._normalize(query)
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = (time.monotonic(), result)
+            while len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
+
+    def clear(self) -> None:
+        """Clear all cached entries."""
+        with self._lock:
+            self._cache.clear()
+            self._hits = 0
+            self._misses = 0
+
+    def stats(self) -> Dict[str, int]:
+        """Return cache statistics."""
+        return {"hits": self._hits, "misses": self._misses, "size": len(self._cache)}
 
 
 def extract_entities_from_query(
@@ -461,11 +516,13 @@ class GraphRetriever:
         self.graph_path = graph_path
         self.config = config or get_graph_config()
         self.kg: Optional[KnowledgeGraph] = None
+        self._cache = GraphRetrievalCache()
 
     def load(self) -> bool:
         """Load the knowledge graph."""
         try:
             self.kg = KnowledgeGraph.load(self.graph_path, self.config)
+            self._cache.clear()
             return len(self.kg.nodes) > 0
         except Exception as e:
             logger.error(f"Failed to load knowledge graph: {e}")
@@ -487,7 +544,14 @@ class GraphRetriever:
                     confidence=0.0,
                 )
 
-        return retrieve_from_graph(query, self.kg, self.config)
+        cached = self._cache.get(query)
+        if cached is not None:
+            logger.debug(f"Graph cache hit: {query[:50]}...")
+            return cached
+
+        result = retrieve_from_graph(query, self.kg, self.config)
+        self._cache.put(query, result)
+        return result
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get graph statistics."""

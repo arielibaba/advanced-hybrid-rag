@@ -253,6 +253,60 @@ def cmd_schema_generate(args):
     print(f"  Relationship types: {len(schema.get('relationships', []))}")
 
 
+def cmd_stats(args):
+    """Handle the stats command - show ingestion history."""
+    import json
+
+    from .constants import INGESTION_STATS_PATH
+
+    path = Path(INGESTION_STATS_PATH)
+    if not path.exists():
+        print("No ingestion stats found. Run 'cognidoc ingest' first.")
+        return
+
+    try:
+        history = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, TypeError):
+        print("Error: stats file is corrupted.")
+        return
+
+    if not history:
+        print("No ingestion runs recorded.")
+        return
+
+    entries = history[-args.last :]
+
+    print(f"Ingestion History (last {len(entries)} of {len(history)} runs)")
+    print("=" * 70)
+
+    for i, entry in enumerate(entries):
+        ts = entry.get("timestamp", "?")
+        timing = entry.get("timing", {})
+        stats = entry.get("stats", {})
+
+        total_time = timing.get("total_seconds", "?")
+        docs = stats.get("document_conversion", {})
+        embeds = stats.get("embeddings", {})
+        graph = stats.get("graph_extraction", {})
+
+        run_num = len(history) - len(entries) + i + 1
+        print(f"\nRun {run_num}: {ts}")
+        print(f"  Duration:  {total_time}s")
+        print(f"  Docs:      {docs.get('total_files', docs.get('converted', 0))}")
+        print(f"  Embedded:  {embeds.get('embedded', 0)}")
+        print(f"  Entities:  {graph.get('entities_extracted', 0)}")
+
+        if args.verbose:
+            stages = timing.get("stages", {})
+            if stages:
+                print("  Stages:")
+                for stage, dur in stages.items():
+                    print(f"    {stage}: {dur}s")
+
+    if args.json:
+        print(f"\nRaw JSON at: {path}")
+
+
 def cmd_info(args):
     """Handle the info command."""
     from .api import CogniDoc
@@ -477,6 +531,29 @@ For more information: https://github.com/arielibaba/cognidoc
         help="Regenerate even if schema already exists",
     )
 
+    # --- stats command ---
+    stats_parser = subparsers.add_parser(
+        "stats",
+        help="Show ingestion history and statistics",
+    )
+    stats_parser.add_argument(
+        "--last",
+        type=int,
+        default=5,
+        help="Number of recent runs to show (default: 5)",
+    )
+    stats_parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show per-stage timing breakdown",
+    )
+    stats_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Show path to raw JSON file",
+    )
+
     # --- info command ---
     info_parser = subparsers.add_parser(
         "info",
@@ -497,6 +574,7 @@ For more information: https://github.com/arielibaba/cognidoc
         "serve": cmd_serve,
         "init": cmd_init,
         "info": cmd_info,
+        "stats": cmd_stats,
         "schema-generate": cmd_schema_generate,
     }
 

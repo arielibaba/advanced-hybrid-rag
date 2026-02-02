@@ -20,9 +20,11 @@ Features:
 - Hybrid RAG (Vector + Graph)
 """
 
+import json
 import os
 import asyncio
 import argparse
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .constants import (
@@ -309,6 +311,36 @@ def format_ingestion_report(stats: dict, timing: dict) -> str:
     lines.append("=" * 70)
 
     return "\n".join(lines)
+
+
+def _save_ingestion_stats(stats: dict, timing: dict) -> None:
+    """Persist ingestion stats and timing for historical tracking."""
+    from .constants import INGESTION_STATS_PATH
+
+    path = Path(INGESTION_STATS_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    history: list = []
+    if path.exists():
+        try:
+            history = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(history, list):
+                history = []
+        except (json.JSONDecodeError, TypeError, OSError):
+            history = []
+
+    history.append(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "stats": stats,
+            "timing": timing,
+        }
+    )
+    if len(history) > 50:
+        history = history[-50:]
+
+    path.write_text(json.dumps(history, indent=2, default=str), encoding="utf-8")
+    logger.info(f"Ingestion stats saved to {path}")
 
 
 def parse_args():
@@ -956,6 +988,14 @@ def _clear_query_caches():
     except ImportError:
         pass
     try:
+        from .hybrid_retriever import _hybrid_retriever
+
+        if _hybrid_retriever and _hybrid_retriever._graph_retriever:
+            _hybrid_retriever._graph_retriever._cache.clear()
+            logger.info("Graph retrieval cache cleared")
+    except Exception:
+        pass
+    try:
         from .utils.rag_utils import clear_query_embedding_cache
 
         clear_query_embedding_cache()
@@ -1218,6 +1258,12 @@ async def run_ingestion_pipeline_async(
     # Generate and display ingestion report
     report = format_ingestion_report(stats, pipeline_summary)
     print(report)
+
+    # Persist stats for historical tracking
+    try:
+        _save_ingestion_stats(stats, pipeline_summary)
+    except Exception as e:
+        logger.warning(f"Failed to save ingestion stats: {e}")
 
     return stats
 
