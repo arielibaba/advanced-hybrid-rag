@@ -139,6 +139,12 @@ class ToolResult:
             excerpts = data.get("excerpts", [])
             for i, exc in enumerate(excerpts[:5], 1):
                 parts.append(f"[{i}] {exc}")
+            if total > len(excerpts):
+                parts.append(
+                    f"\nCOVERAGE NOTE: Showing {len(excerpts)} of {total} matches. "
+                    f"The response may not cover all occurrences. "
+                    f"Mention this limitation in your answer."
+                )
             return "\n".join(parts)
 
         return str(self.data)
@@ -199,12 +205,18 @@ class RetrieveVectorTool(BaseTool):
     parameters = {
         "query": "The search query to find relevant documents",
         "top_k": "Number of results to return (default: 5)",
+        "source_filter": (
+            "Optional: filter results to a specific document name "
+            "(e.g., 'rapport_2024.pdf'). Partial match supported."
+        ),
     }
 
     def __init__(self, retriever: "HybridRetriever"):
         self.retriever = retriever
 
-    def execute(self, query: str = "", top_k: str = "5") -> ToolResult:
+    def execute(
+        self, query: str = "", top_k: str = "5", source_filter: str = "", **kw
+    ) -> ToolResult:
         try:
             if not query or not query.strip():
                 return ToolResult(
@@ -214,9 +226,10 @@ class RetrieveVectorTool(BaseTool):
                 )
 
             k = int(top_k)
+            sf = source_filter.strip().lower()
 
-            # Check cache first
-            cached = ToolCache.get("retrieve_vector", query=query, top_k=k)
+            # Check cache first (include source_filter in cache key)
+            cached = ToolCache.get("retrieve_vector", query=query, top_k=k, source_filter=sf)
             if cached is not None:
                 return ToolResult(
                     tool=self.name,
@@ -228,8 +241,17 @@ class RetrieveVectorTool(BaseTool):
             if not self.retriever.is_loaded():
                 self.retriever.load()
 
-            # Use vector-only retrieval
-            results = self.retriever._vector_index.search(query, top_k=k)
+            # Retrieve more candidates when filtering, to compensate for post-filter loss
+            search_k = k * 3 if sf else k
+            results = self.retriever._vector_index.search(query, top_k=search_k)
+
+            # Apply source filter if specified
+            if sf:
+                results = [
+                    nws
+                    for nws in results
+                    if sf in nws.node.metadata.get("source", {}).get("document", "").lower()
+                ][:k]
 
             docs = []
             for nws in results:
@@ -242,13 +264,13 @@ class RetrieveVectorTool(BaseTool):
                 )
 
             # Store in cache
-            ToolCache.set("retrieve_vector", docs, query=query, top_k=k)
+            ToolCache.set("retrieve_vector", docs, query=query, top_k=k, source_filter=sf)
 
             return ToolResult(
                 tool=self.name,
                 success=True,
                 data=docs,
-                metadata={"query": query, "count": len(docs)},
+                metadata={"query": query, "count": len(docs), "source_filter": sf or None},
             )
         except Exception as e:
             logger.error(f"RetrieveVectorTool error: {e}")
@@ -730,12 +752,18 @@ class ExhaustiveSearchTool(BaseTool):
     parameters = {
         "query": "Keywords to search for (e.g., 'budget 2024')",
         "max_excerpts": "Maximum number of excerpts to return (default: 5)",
+        "source_filter": (
+            "Optional: filter results to a specific document name "
+            "(e.g., 'rapport_2024.pdf'). Partial match supported."
+        ),
     }
 
     def __init__(self, retriever: "HybridRetriever"):
         self.retriever = retriever
 
-    def execute(self, query: str = "", max_excerpts: str = "5", **kwargs) -> ToolResult:
+    def execute(
+        self, query: str = "", max_excerpts: str = "5", source_filter: str = "", **kwargs
+    ) -> ToolResult:
         """Execute exhaustive BM25 search across all indexed documents."""
         if not query.strip():
             return ToolResult(tool=self.name, success=False, error="Query is required.")
@@ -744,6 +772,8 @@ class ExhaustiveSearchTool(BaseTool):
             n_excerpts = min(int(max_excerpts), 10)
         except (ValueError, TypeError):
             n_excerpts = 5
+
+        sf = source_filter.strip().lower()
 
         try:
             # Try BM25 first (exhaustive), fall back to keyword index
@@ -756,6 +786,15 @@ class ExhaustiveSearchTool(BaseTool):
                 all_matches = bm25.search(query, top_k=bm25.N)
             else:
                 all_matches = self._fallback_keyword_search(query)
+
+            # Apply source filter if specified
+            if sf:
+                all_matches = [
+                    (doc_dict, score)
+                    for doc_dict, score in all_matches
+                    if sf
+                    in doc_dict.get("metadata", {}).get("source", {}).get("document", "").lower()
+                ]
 
             if not all_matches:
                 return ToolResult(

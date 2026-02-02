@@ -207,8 +207,8 @@ Use parallel actions ONLY for independent operations (e.g., retrieving info abou
 
 ## When to use each tool
 - `database_stats`: ONLY for "how many documents?", "list documents", etc.
-- `exhaustive_search`: For corpus-wide keyword questions: "how many documents mention X?", "list all documents about Y", "does any document discuss Z?"
-- `retrieve_vector`: Factual questions about document content
+- `exhaustive_search`: For corpus-wide keyword questions: "how many documents mention X?", "list all documents about Y", "does any document discuss Z?" Use `source_filter` to restrict to a specific document.
+- `retrieve_vector`: Factual questions about document content. Use `source_filter` to target a specific document (e.g., when comparing documents or when the user asks about a particular report).
 - `retrieve_graph`: Questions about relationships between entities
 - `lookup_entity`: Only if you need detailed info about ONE specific entity
 - `compare_entities`: Only for explicit comparison questions
@@ -713,6 +713,13 @@ Provide the best possible answer with the available information. If some aspects
                         elif act.tool == ToolName.LOOKUP_ENTITY:
                             if res.data:
                                 context.entities_found.append(res.data)
+                        elif act.tool == ToolName.EXHAUSTIVE_SEARCH:
+                            total = res.data.get("total_matches", 0)
+                            docs = res.data.get("source_documents", [])
+                            context.add_context(
+                                f"Exhaustive search: {total} matches across "
+                                f"{len(docs)} documents: {', '.join(docs[:10])}"
+                            )
                         elif act.tool in (ToolName.SYNTHESIZE, ToolName.COMPARE_ENTITIES):
                             context.add_context(str(res.data))
 

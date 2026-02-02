@@ -365,6 +365,52 @@ class TestRetrieveVectorTool:
         assert len(result.data) == 1
         assert result.data[0]["text"] == "Document content"
 
+    def test_source_filter_filters_results(self):
+        """source_filter keeps only matching documents."""
+        mock_retriever = MagicMock()
+        mock_retriever.is_loaded.return_value = True
+
+        def make_nws(text, source_doc, score):
+            node = MagicMock()
+            node.text = text
+            node.metadata = {"source": {"document": source_doc}}
+            nws = MagicMock()
+            nws.node = node
+            nws.score = score
+            return nws
+
+        mock_retriever._vector_index.search.return_value = [
+            make_nws("Content A", "rapport_2024.pdf", 0.9),
+            make_nws("Content B", "budget_2023.pdf", 0.8),
+            make_nws("Content C", "rapport_2024.pdf", 0.7),
+        ]
+
+        tool = RetrieveVectorTool(mock_retriever)
+        result = tool.execute(query="test", source_filter="rapport_2024")
+
+        assert result.success is True
+        assert len(result.data) == 2
+        assert all("rapport_2024" in d["metadata"]["source"]["document"] for d in result.data)
+
+    def test_source_filter_empty_no_filtering(self):
+        """Empty source_filter returns all results."""
+        mock_retriever = MagicMock()
+        mock_retriever.is_loaded.return_value = True
+
+        mock_node = MagicMock()
+        mock_node.text = "Content"
+        mock_node.metadata = {"source": {"document": "doc.pdf"}}
+        mock_nws = MagicMock()
+        mock_nws.node = mock_node
+        mock_nws.score = 0.9
+        mock_retriever._vector_index.search.return_value = [mock_nws]
+
+        tool = RetrieveVectorTool(mock_retriever)
+        result = tool.execute(query="test", source_filter="")
+
+        assert result.success is True
+        assert len(result.data) == 1
+
 
 class TestLookupEntityTool:
     """Tests for LookupEntityTool with mocked graph."""
@@ -570,6 +616,47 @@ class TestExhaustiveSearchTool:
             data={"total_matches": 0, "source_documents": [], "excerpts": []},
         )
         assert "No documents match" in result.observation
+
+    def test_source_filter_on_exhaustive(self):
+        """source_filter limits exhaustive search to matching documents."""
+        matches = [
+            (
+                {"text": "Budget 2024", "metadata": {"source": {"document": "report.pdf"}}},
+                2.5,
+            ),
+            (
+                {"text": "Budget 2023", "metadata": {"source": {"document": "annex.pdf"}}},
+                1.8,
+            ),
+            (
+                {"text": "Budget detail", "metadata": {"source": {"document": "report.pdf"}}},
+                1.2,
+            ),
+        ]
+        bm25 = self._make_bm25(matches)
+        retriever = self._make_retriever(bm25=bm25)
+
+        tool = ExhaustiveSearchTool(retriever)
+        result = tool.execute(query="budget", source_filter="report")
+
+        assert result.success is True
+        assert result.data["total_matches"] == 2
+        assert result.data["source_documents"] == ["report.pdf"]
+
+    def test_observation_coverage_warning(self):
+        """Coverage warning appears when total_matches > excerpts shown."""
+        result = ToolResult(
+            tool=ToolName.EXHAUSTIVE_SEARCH,
+            success=True,
+            data={
+                "total_matches": 50,
+                "source_documents": ["report.pdf"],
+                "excerpts": ["(report.pdf, score=2.50) Budget..."],
+            },
+        )
+        obs = result.observation
+        assert "COVERAGE NOTE" in obs
+        assert "1 of 50" in obs
 
 
 if __name__ == "__main__":

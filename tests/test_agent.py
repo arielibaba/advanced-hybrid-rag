@@ -1031,5 +1031,43 @@ ARGUMENTS: {"answer": "Gemini is a multimodal AI model developed by Google."}"""
         assert len(result.steps) >= 1
 
 
+class TestExhaustiveSearchContext:
+    """Tests for exhaustive search context storage in the agent."""
+
+    def test_exhaustive_search_stored_in_context(self):
+        """EXHAUSTIVE_SEARCH data is stored in gathered_context."""
+        from cognidoc.agent import AgentContext
+        from cognidoc.agent_tools import ToolName, ToolResult, ToolCall
+
+        context = AgentContext(query="test")
+
+        # Simulate what the agent loop does for EXHAUSTIVE_SEARCH
+        act = ToolCall(tool=ToolName.EXHAUSTIVE_SEARCH, arguments={"query": "budget"})
+        res = ToolResult(
+            tool=ToolName.EXHAUSTIVE_SEARCH,
+            success=True,
+            data={
+                "total_matches": 25,
+                "source_documents": ["report.pdf", "annex.pdf", "summary.pdf"],
+                "excerpts": ["excerpt1"],
+            },
+        )
+
+        # Replicate the agent's context storage logic
+        if res.success and res.data:
+            if act.tool == ToolName.EXHAUSTIVE_SEARCH:
+                total = res.data.get("total_matches", 0)
+                docs = res.data.get("source_documents", [])
+                context.add_context(
+                    f"Exhaustive search: {total} matches across "
+                    f"{len(docs)} documents: {', '.join(docs[:10])}"
+                )
+
+        gathered = context.get_gathered_context()
+        assert "25 matches" in gathered
+        assert "3 documents" in gathered
+        assert "report.pdf" in gathered
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
