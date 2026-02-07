@@ -2138,7 +2138,9 @@ def create_gradio_app(default_reranking: bool = True):
                 gr.HTML("<div class='dashboard-section-title'>Overview</div>")
                 stats_display = gr.HTML(get_global_stats_html())
 
-                gr.HTML("<div class='dashboard-section-title' style='margin-top: 1.5rem;'>Performance</div>")
+                gr.HTML(
+                    "<div class='dashboard-section-title' style='margin-top: 1.5rem;'>Performance</div>"
+                )
                 with gr.Row(equal_height=True):
                     latency_chart = gr.Plot(value=create_latency_by_path_chart())
                     distribution_chart = gr.Plot(value=create_path_distribution_chart())
@@ -2146,7 +2148,9 @@ def create_gradio_app(default_reranking: bool = True):
                 with gr.Row():
                     timeline_chart = gr.Plot(value=create_latency_over_time_chart())
 
-                gr.HTML("<div class='dashboard-section-title' style='margin-top: 1.5rem;'>Recent Queries</div>")
+                gr.HTML(
+                    "<div class='dashboard-section-title' style='margin-top: 1.5rem;'>Recent Queries</div>"
+                )
                 queries_table = gr.Dataframe(
                     value=get_recent_queries_dataframe(),
                     headers=["Time", "Path", "Type", "Latency (s)", "Cache Hits", "Steps"],
@@ -2159,8 +2163,12 @@ def create_gradio_app(default_reranking: bool = True):
                         variant="primary",
                         elem_classes=["refresh-primary-btn"],
                     )
-                    export_csv_btn = gr.Button("Export CSV", variant="secondary", elem_classes=["secondary-btn"])
-                    export_json_btn = gr.Button("Export JSON", variant="secondary", elem_classes=["secondary-btn"])
+                    export_csv_btn = gr.Button(
+                        "Export CSV", variant="secondary", elem_classes=["secondary-btn"]
+                    )
+                    export_json_btn = gr.Button(
+                        "Export JSON", variant="secondary", elem_classes=["secondary-btn"]
+                    )
 
                 export_file = gr.File(label="Download", visible=False)
 
