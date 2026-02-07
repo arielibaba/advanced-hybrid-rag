@@ -83,7 +83,7 @@ Resume from specific stage:
 
 ## CI Pipeline
 
-CI runs on push/PR to `master` with two jobs:
+CI runs on push/PR to `master` with three jobs:
 
 - **lint**: black `--check`, pylint `--fail-under=7.0`, mypy on `src/cognidoc/`
 - **test**: pytest across Python 3.10/3.11/3.12 with `-x` (fail-fast), excludes `test_00_e2e_pipeline.py` and `test_benchmark.py`
