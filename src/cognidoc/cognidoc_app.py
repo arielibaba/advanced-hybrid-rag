@@ -736,33 +736,27 @@ CUSTOM_CSS = """
    DARK MODE STYLES
    ===================================================== */
 
-/* Dark mode toggle button */
-.theme-toggle {
+/* Theme toggle button */
+.cognidoc-theme-toggle {
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
-    padding: 8px 12px;
+    padding: 8px 16px;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
     color: #e2e8f0;
     font-size: 0.875rem;
     font-weight: 500;
     transition: all 0.2s ease;
+    white-space: nowrap;
 }
 
-.theme-toggle:hover {
+.cognidoc-theme-toggle:hover {
     background: rgba(255, 255, 255, 0.2);
     border-color: rgba(255, 255, 255, 0.3);
 }
 
-.theme-toggle .icon {
-    font-size: 1.1rem;
-}
-
 /* Dark mode overrides */
-body.dark-mode {
+html.dark-mode {
     --bg-primary: #0f172a;
     --bg-secondary: #1e293b;
     --bg-tertiary: #334155;
@@ -771,164 +765,164 @@ body.dark-mode {
     --border-color: #334155;
 }
 
-body.dark-mode .gradio-container {
+html.dark-mode .gradio-container {
     background: var(--bg-primary) !important;
 }
 
-body.dark-mode .gr-panel,
-body.dark-mode .gr-box,
-body.dark-mode .gr-form {
+html.dark-mode .gr-panel,
+html.dark-mode .gr-box,
+html.dark-mode .gr-form {
     background: var(--bg-secondary) !important;
     border-color: var(--border-color) !important;
 }
 
-body.dark-mode .settings-title {
+html.dark-mode .settings-title {
     color: var(--text-primary) !important;
 }
 
-body.dark-mode .toggle-card {
+html.dark-mode .toggle-card {
     background: var(--bg-secondary) !important;
     border-color: var(--border-color) !important;
 }
 
-body.dark-mode .toggle-card:hover {
+html.dark-mode .toggle-card:hover {
     border-color: #667eea !important;
 }
 
-body.dark-mode .info-card {
+html.dark-mode .info-card {
     background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
     border-color: #334155 !important;
 }
 
-body.dark-mode .info-card-title {
+html.dark-mode .info-card-title {
     color: #a5b4fc !important;
 }
 
-body.dark-mode .info-card-text {
+html.dark-mode .info-card-text {
     color: var(--text-secondary) !important;
 }
 
-body.dark-mode .secondary-btn {
+html.dark-mode .secondary-btn {
     background: var(--bg-tertiary) !important;
     border-color: var(--border-color) !important;
     color: var(--text-primary) !important;
 }
 
-body.dark-mode .secondary-btn:hover {
+html.dark-mode .secondary-btn:hover {
     background: #475569 !important;
 }
 
-body.dark-mode .chat-container {
+html.dark-mode .chat-container {
     border-color: var(--border-color) !important;
 }
 
-body.dark-mode .chatbot {
+html.dark-mode .chatbot {
     background: var(--bg-secondary) !important;
 }
 
-body.dark-mode .chatbot .message.bot {
+html.dark-mode .chatbot .message.bot {
     background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
     border-color: var(--border-color) !important;
     color: var(--text-primary) !important;
 }
 
-body.dark-mode .chatbot .message strong {
+html.dark-mode .chatbot .message strong {
     color: var(--text-primary) !important;
 }
 
-body.dark-mode .chatbot .message hr {
+html.dark-mode .chatbot .message hr {
     border-color: var(--border-color) !important;
 }
 
-body.dark-mode .chatbot .message code {
+html.dark-mode .chatbot .message code {
     background: var(--bg-tertiary) !important;
     color: #f472b6 !important;
 }
 
-body.dark-mode .chatbot .message a {
+html.dark-mode .chatbot .message a {
     color: #818cf8 !important;
 }
 
-body.dark-mode .chatbot .message a:hover {
+html.dark-mode .chatbot .message a:hover {
     color: #a5b4fc !important;
 }
 
-body.dark-mode input,
-body.dark-mode textarea {
+html.dark-mode input,
+html.dark-mode textarea {
     background: var(--bg-secondary) !important;
     border-color: var(--border-color) !important;
     color: var(--text-primary) !important;
 }
 
-body.dark-mode input::placeholder,
-body.dark-mode textarea::placeholder {
+html.dark-mode input::placeholder,
+html.dark-mode textarea::placeholder {
     color: var(--text-secondary) !important;
 }
 
-body.dark-mode .metrics-card {
+html.dark-mode .metrics-card {
     background: var(--bg-secondary) !important;
     border-color: var(--border-color) !important;
 }
 
-body.dark-mode .metrics-card-title {
+html.dark-mode .metrics-card-title {
     color: var(--text-primary) !important;
 }
 
-body.dark-mode .metrics-label {
+html.dark-mode .metrics-label {
     color: var(--text-secondary) !important;
 }
 
-body.dark-mode .dashboard-section-title {
+html.dark-mode .dashboard-section-title {
     color: var(--text-primary) !important;
 }
 
-body.dark-mode .footer {
+html.dark-mode .footer {
     color: var(--text-secondary) !important;
 }
 
-body.dark-mode label,
-body.dark-mode .gr-check-radio label {
+html.dark-mode label,
+html.dark-mode .gr-check-radio label {
     color: var(--text-primary) !important;
 }
 
-body.dark-mode .gr-check-radio {
+html.dark-mode .gr-check-radio {
     color: var(--text-secondary) !important;
 }
 
 /* Tab styling for dark mode */
-body.dark-mode .tabs {
+html.dark-mode .tabs {
     background: var(--bg-secondary) !important;
 }
 
-body.dark-mode .tab-nav button {
+html.dark-mode .tab-nav button {
     color: var(--text-secondary) !important;
 }
 
-body.dark-mode .tab-nav button.selected {
+html.dark-mode .tab-nav button.selected {
     color: var(--text-primary) !important;
     background: var(--bg-tertiary) !important;
 }
 
 /* Dropdown and select styling */
-body.dark-mode select,
-body.dark-mode .gr-dropdown {
+html.dark-mode select,
+html.dark-mode .gr-dropdown {
     background: var(--bg-secondary) !important;
     border-color: var(--border-color) !important;
     color: var(--text-primary) !important;
 }
 
 /* Table styling for dark mode */
-body.dark-mode table {
+html.dark-mode table {
     background: var(--bg-secondary) !important;
     color: var(--text-primary) !important;
 }
 
-body.dark-mode th {
+html.dark-mode th {
     background: var(--bg-tertiary) !important;
     color: var(--text-primary) !important;
 }
 
-body.dark-mode td {
+html.dark-mode td {
     border-color: var(--border-color) !important;
 }
 
@@ -985,19 +979,19 @@ body.dark-mode td {
 }
 
 /* Dark mode for sources */
-body.dark-mode .sources-divider {
+html.dark-mode .sources-divider {
     background: linear-gradient(to right, transparent, var(--border-color) 20%, var(--border-color) 80%, transparent);
 }
 
-body.dark-mode .sources-title {
+html.dark-mode .sources-title {
     color: #94a3b8;
 }
 
-body.dark-mode .source-item {
+html.dark-mode .source-item {
     color: #94a3b8;
 }
 
-body.dark-mode .source-item:hover {
+html.dark-mode .source-item:hover {
     color: #a5b4fc;
 }
 """
@@ -1747,18 +1741,73 @@ def get_global_stats_html():
     """
 
 
+THEME_SCRIPT = """<script>
+(function(){
+    // Apply saved theme immediately to avoid flash of wrong theme
+    var s=localStorage.getItem('cognidoc-dark-mode');
+    var p=window.matchMedia('(prefers-color-scheme:dark)').matches;
+    if(s!==null?s==='true':p) document.documentElement.classList.add('dark-mode');
+
+    // Event delegation for theme toggle clicks (works regardless of when button renders)
+    document.addEventListener('click',function(e){
+        var btn=e.target.closest('.cognidoc-theme-toggle');
+        if(!btn) return;
+        var isDark=document.documentElement.classList.toggle('dark-mode');
+        btn.textContent=isDark?'\\u2600\\uFE0F Light':'\\uD83C\\uDF19 Dark';
+        localStorage.setItem('cognidoc-dark-mode',isDark?'true':'false');
+    });
+
+    // Sync button text once Gradio renders it
+    var iv=setInterval(function(){
+        var btn=document.querySelector('.cognidoc-theme-toggle');
+        if(!btn) return;
+        clearInterval(iv);
+        var isDark=document.documentElement.classList.contains('dark-mode');
+        btn.textContent=isDark?'\\u2600\\uFE0F Light':'\\uD83C\\uDF19 Dark';
+    },200);
+})();
+</script>"""
+
+
 def create_fastapi_app(demo: gr.Blocks) -> "FastAPI":
     """
-    Wrap a Gradio app in a FastAPI app with PDF serving endpoint.
+    Wrap a Gradio app in a FastAPI app with PDF serving endpoint
+    and theme toggle script injection.
 
     Registers /pdfs/{path} BEFORE Gradio's catch-all at "/" so that
     source document links work correctly.
+
+    Uses middleware to inject theme toggle JavaScript into the HTML response,
+    since Gradio 6.2 does not support js= or head= parameters on gr.Blocks
+    and sanitizes <script> tags in gr.HTML() components.
     """
     from pathlib import Path as _Path
     from fastapi import FastAPI, HTTPException
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
+    from starlette.middleware.base import BaseHTTPMiddleware
 
     app = FastAPI()
+
+    # Middleware to inject theme toggle script into Gradio's HTML page
+    class ThemeInjectionMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            content_type = response.headers.get("content-type", "")
+            if "text/html" in content_type:
+                body = b""
+                async for chunk in response.body_iterator:
+                    body += chunk
+                html = body.decode("utf-8")
+                # Inject script at end of <head> (runs before body renders)
+                html = html.replace("</head>", THEME_SCRIPT + "</head>", 1)
+                return Response(
+                    content=html,
+                    status_code=response.status_code,
+                    media_type="text/html",
+                )
+            return response
+
+    app.add_middleware(ThemeInjectionMiddleware)
 
     _pdf_dir = _Path(PDF_DIR).resolve()
     logger.info(f"PDF serving endpoint registered at /pdfs from {_pdf_dir}")
@@ -1804,7 +1853,7 @@ def create_gradio_app(default_reranking: bool = True):
         ),
     ) as demo:
 
-        # Header with dark mode toggle
+        # Header with theme toggle button
         gr.HTML(
             """
         <div class="header-container">
@@ -1822,71 +1871,10 @@ def create_gradio_app(default_reranking: bool = True):
                 </div>
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <span class="header-badge">Vector + GraphRAG</span>
-                    <button class="theme-toggle" onclick="toggleDarkMode()" id="theme-toggle-btn">
-                        <span class="icon" id="theme-icon">🌙</span>
-                        <span id="theme-label">Dark</span>
-                    </button>
+                    <span class="cognidoc-theme-toggle" role="button" tabindex="0">🌙 Dark</span>
                 </div>
             </div>
         </div>
-        <script>
-            // Dark mode toggle functionality
-            window.toggleDarkMode = function() {
-                const body = document.body;
-                const icon = document.getElementById('theme-icon');
-                const label = document.getElementById('theme-label');
-
-                if (!icon || !label) {
-                    console.error('Dark mode toggle elements not found');
-                    return;
-                }
-
-                body.classList.toggle('dark-mode');
-                const isDark = body.classList.contains('dark-mode');
-
-                // Update button
-                icon.textContent = isDark ? '☀️' : '🌙';
-                label.textContent = isDark ? 'Light' : 'Dark';
-
-                // Save preference
-                localStorage.setItem('cognidoc-dark-mode', isDark ? 'true' : 'false');
-
-                console.log('Dark mode toggled:', isDark);
-            };
-
-            // Load saved preference on page load
-            function initDarkMode() {
-                const savedPref = localStorage.getItem('cognidoc-dark-mode');
-                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-                // Use saved preference, or fall back to system preference
-                const shouldBeDark = savedPref !== null ? savedPref === 'true' : prefersDark;
-
-                const icon = document.getElementById('theme-icon');
-                const label = document.getElementById('theme-label');
-
-                if (shouldBeDark) {
-                    document.body.classList.add('dark-mode');
-                    if (icon) icon.textContent = '☀️';
-                    if (label) label.textContent = 'Light';
-                } else {
-                    document.body.classList.remove('dark-mode');
-                    if (icon) icon.textContent = '🌙';
-                    if (label) label.textContent = 'Dark';
-                }
-
-                console.log('Dark mode initialized:', shouldBeDark);
-            }
-
-            // Run on DOMContentLoaded and also after a delay for Gradio
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initDarkMode);
-            } else {
-                initDarkMode();
-            }
-            // Also run after Gradio finishes rendering
-            setTimeout(initDarkMode, 500);
-        </script>
         """
         )
 
